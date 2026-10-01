@@ -3,7 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Camisômetro</title>
+  <title>Esquilook</title>
+  <link rel="icon" href="assets/favicon.ico" sizes="any" />
+  <link rel="icon" href="assets/favicon-32.png" type="image/png" sizes="32x32" />
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
@@ -13,11 +16,11 @@
   <!-- ============ LOGIN ============ -->
   <section id="auth" class="auth hidden">
     <div class="auth-card">
-      <div class="brand brand-lg">
-        <span class="brand-mark">👕</span>
-        <span>Camisômetro</span>
+      <div class="auth-brand">
+        <img class="auth-logo" src="assets/logo.webp" alt="" width="132" height="132" />
+        <span>Esquilook</span>
       </div>
-      <p class="auth-sub">Registre a camisa do dia do seu amigo e descubra qual é a favorita dele.</p>
+      <p class="auth-sub">O diário de looks do esquilo: registre a camisa do dia e descubra a favorita.</p>
 
       <form id="authForm" class="form" autocomplete="on">
         <label class="field">
@@ -38,7 +41,7 @@
   <div id="app" class="hidden">
     <header class="topbar">
       <div class="container topbar-inner">
-        <div class="brand"><span class="brand-mark">👕</span><span>Camisômetro</span></div>
+        <div class="brand"><img class="brand-logo" src="assets/logo.webp" alt="" width="40" height="40" /><span>Esquilook</span></div>
         <div class="topbar-right">
           <span class="user-chip" id="userChip"></span>
           <button id="logoutBtn" class="btn btn-ghost btn-sm" type="button">Sair</button>
@@ -83,8 +86,13 @@
 
         <!-- Ranking -->
         <aside class="panel">
-          <div class="panel-head"><h2>🏆 Ranking</h2></div>
-          <ol class="ranking" id="ranking"></ol>
+          <div class="panel-head">
+            <div>
+              <h2>Ranking</h2>
+              <p class="muted" id="rankSub"></p>
+            </div>
+          </div>
+          <div id="ranking"></div>
         </aside>
       </div>
 

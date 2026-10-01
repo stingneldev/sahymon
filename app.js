@@ -1,8 +1,9 @@
 /* =========================================================
-   Camisômetro — registro da camisa do dia
+   Esquilook — registro da camisa do dia
    Tudo é salvo no localStorage do navegador.
    ========================================================= */
 
+// As chaves mantêm o nome antigo (Camisômetro) para não perder dados já salvos
 const KEY_SESSION = "camisometro:session";
 
 // Login único. A senha não fica em texto puro: guardamos só o SHA-256 de "sal:senha".
@@ -259,7 +260,7 @@ function renderHero() {
     $("#heroToday").innerHTML = shirtMedia(shirt);
   } else {
     $("#todayStatus").textContent = "Ainda não marcado hoje. Escolha a camisa no armário abaixo.";
-    $("#heroToday").innerHTML = `<span class="q">?</span>`;
+    $("#heroToday").innerHTML = `<img class="hero-logo" src="assets/logo.webp" alt="" />`;
   }
 }
 
@@ -292,33 +293,76 @@ function renderGrid() {
     </button>`;
 }
 
+const RANK_COLORS = ["#4f46e5", "#a855f7", "#ec4899", "#f59e0b", "#10b981", "#0ea5e9"];
+
 function renderRanking() {
   const counts = getCounts();
-  const ranked = state.shirts
-    .filter((s) => counts[s.id] > 0)
-    .sort((a, b) => counts[b.id] - counts[a.id] || a.name.localeCompare(b.name));
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
-  const max = ranked.length ? counts[ranked[0].id] : 1;
+  const lastUsed = {};
+  for (const [day, id] of sortedLog()) lastUsed[id] ??= day;
+  const ranked = state.shirts
+    .slice()
+    .sort((a, b) => counts[b.id] - counts[a.id] || (lastUsed[b.id] ?? "").localeCompare(lastUsed[a.id] ?? "") || a.name.localeCompare(b.name));
+  const used = ranked.filter((s) => counts[s.id] > 0);
+  const color = (i) => RANK_COLORS[i % RANK_COLORS.length];
+  const pct = (c) => Math.round((c / total) * 100);
+  const daysLabel = (c) => `${c} ${c === 1 ? "dia" : "dias"}`;
+  const shortDate = (key) => formatDate(key, { day: "2-digit", month: "2-digit" });
 
-  if (!ranked.length) {
-    $("#ranking").innerHTML = `<li class="empty">Nenhum registro ainda. Marque a primeira camisa!</li>`;
+  $("#rankSub").textContent = total ? `${daysLabel(total)} registrados` : "Quem vai liderar?";
+
+  if (!used.length) {
+    $("#ranking").innerHTML = `
+      <div class="rank-empty">
+        <span class="rank-empty-icon">🏆</span>
+        <p>Nenhum registro ainda.</p>
+        <span class="muted">Marque a primeira camisa no armário para abrir o ranking.</span>
+      </div>`;
     return;
   }
 
-  $("#ranking").innerHTML = ranked.map((s, i) => {
+  const leader = used[0];
+  const tie = used[1] && counts[used[1].id] === counts[leader.id];
+
+  const leaderHtml = `
+    <div class="leader">
+      <div class="leader-media">${shirtMedia(leader)}<span class="leader-crown">👑</span></div>
+      <div class="leader-info">
+        <span class="leader-tag">${tie ? "Empate no topo" : "Mais usada"}</span>
+        <strong class="leader-name">${escapeHtml(leader.name)}</strong>
+        <div class="leader-stats">
+          <span><b>${counts[leader.id]}</b> ${counts[leader.id] === 1 ? "dia" : "dias"}</span>
+          <span><b>${pct(counts[leader.id])}%</b> do total</span>
+        </div>
+        <span class="muted leader-last">Última vez em ${shortDate(lastUsed[leader.id])}</span>
+      </div>
+    </div>`;
+
+  const shareHtml = `
+    <div class="share" role="img" aria-label="Divisão dos registros por camisa">
+      ${used.map((s, i) => `<span style="width:${(counts[s.id] / total) * 100}%;background:${color(i)}" title="${escapeHtml(s.name)}: ${pct(counts[s.id])}%"></span>`).join("")}
+    </div>`;
+
+  const max = counts[leader.id];
+  const listHtml = ranked.map((s, i) => {
     const c = counts[s.id];
-    const pct = Math.round((c / total) * 100);
-    const medal = ["🥇", "🥈", "🥉"][i] ?? `${i + 1}º`;
+    const zero = c === 0;
     return `
-      <li class="rank-item">
-        <span class="rank-pos">${medal}</span>
+      <li class="rk-row ${zero ? "rk-zero" : ""} ${i === 0 ? "rk-first" : ""}">
+        <span class="rk-pos">${zero ? "–" : `${i + 1}º`}</span>
         <div class="rank-thumb">${shirtMedia(s)}</div>
-        <div class="rank-info">
-          <div class="rank-top"><span>${escapeHtml(s.name)}</span><span>${c}d · ${pct}%</span></div>
-          <div class="bar"><div style="width:${(c / max) * 100}%"></div></div>
+        <div class="rk-info">
+          <div class="rk-top">
+            <span class="rk-name"><i class="dot" style="background:${zero ? "var(--border)" : color(i)}"></i>${escapeHtml(s.name)}</span>
+            <span class="rk-count">${zero ? "sem uso" : `${daysLabel(c)} · ${pct(c)}%`}</span>
+          </div>
+          <div class="bar"><div style="width:${(c / max) * 100}%;background:${color(i)}"></div></div>
+          ${zero ? "" : `<span class="rk-last">última vez em ${shortDate(lastUsed[s.id])}</span>`}
         </div>
       </li>`;
   }).join("");
+
+  $("#ranking").innerHTML = leaderHtml + shareHtml + `<ol class="rk-list">${listHtml}</ol>`;
 }
 
 function renderHistory() {
