@@ -1,33 +1,14 @@
 /* =========================================================
    Esquilook — registro da camisa do dia
-   Tudo é salvo no localStorage do navegador.
+   Os dados ficam no Supabase (api.js); só quem faz login vê ou registra.
    ========================================================= */
 
-// As chaves mantêm o nome antigo (Camisômetro) para não perder dados já salvos
-const KEY_SESSION = "camisometro:session";
-const KEY_LOCK = "camisometro:login-lock";
-const dataKey = (user) => `camisometro:data:${user}`;
+// Dados da versão antiga (salvos só no navegador), oferecidos para importação
+const LEGACY_DATA = "camisometro:data:sahymon";
+const LEGACY_KEYS = ["camisometro:session", "camisometro:login-lock"];
+const KEY_IMPORT_DISMISSED = "esquilook:import-dismissed";
 
-// Login único. A senha não fica no código: guardamos só o PBKDF2-SHA256 dela,
-// com sal aleatório e muitas iterações para encarecer tentativas de adivinhação.
-const AUTH_USER = "sahymon";
-const AUTH_SALT = "b5a8eb885c77ed2920ea48db01e87b12";
-const AUTH_ITERATIONS = 600000;
-const AUTH_HASH = "4122321467d4aa963d81a624c4becf6e3d68e0bf8b0e274b44bbc969a1fda772";
-
-const SESSION_DAYS = 30;
-const MAX_ATTEMPTS = 5;      // tentativas erradas antes de bloquear
-const LOCK_SECONDS = 30;     // bloqueio cresce a cada nova rodada de erros
-
-const DATA_VERSION = 4;
-
-// Camisas do armário: o esquilo vestindo cada uma
-const DEFAULT_SHIRTS = [
-  { id: "brasil-azul", name: "Brasil azul", color: "#1e3a8a", img: "camisas/esquilo_brasil.webp" },
-  { id: "chelsea", name: "Chelsea", color: "#1d4ed8", img: "camisas/esquilo_chelsea.webp" },
-  { id: "cassino", name: "Grand Hotel Cassino", color: "#4a2511", img: "camisas/esquilo_cassino.webp" },
-  { id: "ifes", name: "IFES preta", color: "#111111", img: "camisas/esquilo_ifes.webp" },
-];
+const SYNC_SECONDS = 60; // busca novidades de outras pessoas
 
 // Falta: registrada no lugar da camisa, mas não entra no ranking
 const ABSENT = "__faltou__";
@@ -37,10 +18,7 @@ const ABSENT_IMG = "camisas/faltou.webp";
 const CAL_START = "2026-10-01";
 const CAL_END = "2027-12-31";
 
-// Camisas de exemplo da primeira versão, removidas na migração se nunca foram usadas
-const OLD_DEFAULT_NAMES = ["Preta básica", "Branca lisa", "Azul marinho", "Vermelha", "Cinza mescla", "Verde musgo"];
-
-// Formatos aceitos ao carregar dados do localStorage (que pode ser editado à mão)
+// Formatos aceitos ao montar a tela (os dados vêm do servidor, mas nunca confiamos cegamente)
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ID_RE = /^[a-z0-9_-]{1,40}$/i;
 const COLOR_RE = /^#[0-9a-f]{6}$/i;
@@ -52,8 +30,9 @@ const MAX_UPLOAD_PIXELS = 40_000_000;
 
 const $ = (sel) => document.querySelector(sel);
 
-let currentUser = null;
 let state = null;
+let busy = false;       // evita cliques duplos enquanto o servidor responde
+let syncTimer = null;
 let selectedDay = null; // "YYYY-MM-DD" marcado no calendário
 let viewMonth = null;   // "YYYY-MM" exibido no calendário
 
@@ -83,24 +62,6 @@ function formatDate(key, opts = { weekday: "long", day: "2-digit", month: "long"
 function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
-function readJSON(key, fallback) {
-  try {
-    const v = JSON.parse(localStorage.getItem(key));
-    return v ?? fallback;
-  } catch {
-    return fallback;
-  }
-}
-function writeJSON(key, value) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-    return true;
-  } catch {
-    toast("Sem espaço para salvar — tente uma foto menor.");
-    return false;
-  }
-}
-
 let toastTimer;
 function toast(msg) {
   const el = $("#toast");
@@ -108,18 +69,6 @@ function toast(msg) {
   el.classList.add("show");
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
-}
-
-const hexToBytes = (hex) => new Uint8Array(hex.match(/../g).map((h) => parseInt(h, 16)));
-
-async function hashPassword(password) {
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
-  const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", hash: "SHA-256", salt: hexToBytes(AUTH_SALT), iterations: AUTH_ITERATIONS },
-    key,
-    256,
-  );
-  return [...new Uint8Array(bits)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 /* ---------------- Visual da camisa ---------------- */
@@ -147,59 +96,43 @@ function shirtMedia(shirt) {
 
 /* ---------------- Auth ---------------- */
 
-function getLock() {
-  const lock = readJSON(KEY_LOCK, {});
-  return { fails: Number(lock.fails) || 0, until: Number(lock.until) || 0 };
+// Login só com o nome: "sahymon" vira "sahymon@<loginDomain>" (endereço de fachada da conta no Supabase)
+function loginEmailFor(user) {
+  return /^[a-z0-9._-]{3,24}$/.test(user) && CFG.loginDomain ? `${user}@${CFG.loginDomain}` : null;
 }
 
 async function handleAuth(e) {
   e.preventDefault();
   const err = $("#authError");
   const btn = $("#authSubmit");
-
-  if (!window.crypto?.subtle) {
-    err.textContent = "Abra a página por https:// ou localhost para entrar.";
+  if (!api.configured()) {
+    err.textContent = "Configuração do servidor pendente (config.js).";
     return;
   }
 
-  const lock = getLock();
-  const wait = Math.ceil((lock.until - Date.now()) / 1000);
-  if (wait > 0) {
-    err.textContent = `Muitas tentativas. Aguarde ${wait}s.`;
-    return;
-  }
-
-  const user = $("#authUser").value.trim().toLowerCase();
+  const email = loginEmailFor($("#authUser").value.trim().toLowerCase());
   const pass = $("#authPass").value;
+  if (!email) {
+    err.textContent = "Usuário ou senha inválidos.";
+    return;
+  }
 
   btn.disabled = true;
-  btn.textContent = "Verificando…";
-  const ok = user === AUTH_USER && (await hashPassword(pass)) === AUTH_HASH;
-  btn.disabled = false;
-  btn.textContent = "Entrar";
-
-  if (!ok) {
-    lock.fails++;
-    if (lock.fails % MAX_ATTEMPTS === 0) lock.until = Date.now() + LOCK_SECONDS * 1000 * (lock.fails / MAX_ATTEMPTS);
-    writeJSON(KEY_LOCK, lock);
-    err.textContent = lock.until > Date.now()
-      ? `Muitas tentativas. Aguarde ${Math.ceil((lock.until - Date.now()) / 1000)}s.`
-      : "Usuário ou senha inválidos.";
+  btn.textContent = "Entrando…";
+  try {
+    await api.signIn(email, pass);
+  } catch (ex) {
+    err.textContent = ex instanceof AuthError ? "Usuário ou senha inválidos." : ex.message;
     return;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Entrar";
   }
 
   err.textContent = "";
-  localStorage.removeItem(KEY_LOCK);
-  writeJSON(KEY_SESSION, { user, exp: Date.now() + SESSION_DAYS * 86400000 });
   $("#authForm").reset();
   setPasswordVisible(false);
-  enterApp(user);
-}
-
-// Sessão salva = usuário + validade. Formatos antigos ou vencidos pedem login de novo.
-function validSession() {
-  const sess = readJSON(KEY_SESSION, null);
-  return sess && sess.user === AUTH_USER && Number(sess.exp) > Date.now() ? sess.user : null;
+  enterApp();
 }
 
 // Olho da senha: alterna entre mostrar e esconder
@@ -211,29 +144,41 @@ function setPasswordVisible(show) {
   btn.title = show ? "Esconder senha" : "Mostrar senha";
 }
 
-function logout() {
-  localStorage.removeItem(KEY_SESSION);
-  currentUser = null;
+async function logout(message) {
+  stopSync();
+  await api.signOut();
   state = null;
   $("#app").classList.add("hidden");
   $("#auth").classList.remove("hidden");
   setPasswordVisible(false);
+  if (typeof message === "string") $("#authError").textContent = message;
+}
+
+// Qualquer erro do servidor passa por aqui: sessão vencida volta ao login
+function handleApiError(ex, fallback = "Não foi possível salvar. Verifique a internet.") {
+  if (ex instanceof AuthError) {
+    logout("Sua sessão expirou. Entre de novo.");
+    return;
+  }
+  console.error(ex);
+  toast(ex?.status === 0 ? "Sem conexão com o servidor." : fallback);
 }
 
 /* ---------------- Estado ---------------- */
 
-function loadState(user) {
-  const saved = sanitizeState(readJSON(dataKey(user), null));
-  if (saved) return migrate(saved);
-  return {
-    version: DATA_VERSION,
-    friend: "Sahymon",
-    shirts: DEFAULT_SHIRTS.map((s) => ({ ...s, createdAt: Date.now() })),
-    log: {}, // { "YYYY-MM-DD": shirtId }
-  };
+// Converte o que veio do servidor para o formato usado pela tela e valida tudo
+function toState({ shirts, entries, settings }) {
+  const log = {};
+  for (const e of entries || []) log[e.day] = e.status === "absent" ? ABSENT : e.shirt_id;
+  const friend = (settings || []).find((x) => x.key === "friend")?.value;
+  return sanitizeState({
+    friend,
+    shirts: (shirts || []).map((x) => ({ ...x, createdAt: x.createdAt ?? Date.parse(x.created_at) })),
+    log,
+  });
 }
 
-// Descarta tudo que não tiver o formato esperado (dados corrompidos ou editados à mão)
+// Descarta tudo que não tiver o formato esperado
 function sanitizeState(data) {
   if (!data || typeof data !== "object" || Array.isArray(data)) return null;
   const ids = new Set();
@@ -256,38 +201,112 @@ function sanitizeState(data) {
   }
 
   const friend = typeof data.friend === "string" && data.friend.trim() ? data.friend.trim().slice(0, 24) : "Sahymon";
-  const version = Number.isInteger(data.version) ? data.version : 1;
-  return { version, friend, shirts, log };
+  return { friend, shirts, log };
 }
 
-function migrate(data) {
-  if ((data.version ?? 1) < 2) {
-    const used = new Set(Object.values(data.log));
-    data.shirts = data.shirts.filter((s) => !OLD_DEFAULT_NAMES.includes(s.name) || used.has(s.id));
-    const missing = DEFAULT_SHIRTS.filter((d) => !data.shirts.some((s) => s.id === d.id));
-    data.shirts.unshift(...missing.map((s) => ({ ...s, createdAt: Date.now() })));
-    data.version = 2;
-  }
-  if (data.version < DATA_VERSION) {
-    const missing = DEFAULT_SHIRTS.filter((d) => !data.shirts.some((s) => s.id === d.id));
-    data.shirts.push(...missing.map((s) => ({ ...s, createdAt: Date.now() })));
-    data.version = DATA_VERSION;
-  }
-  return data;
+// Busca tudo do servidor e redesenha (mantém o dia e o mês que estão abertos)
+async function reload() {
+  state = toState(await api.fetchAll());
+  if (selectedDay) render();
 }
 
-function save() {
-  return writeJSON(dataKey(currentUser), state);
-}
-
-function enterApp(user) {
-  currentUser = user;
-  state = loadState(user);
-  save();
+async function enterApp() {
   $("#auth").classList.add("hidden");
   $("#app").classList.remove("hidden");
-  $("#userChip").innerHTML = `Olá, <b>${escapeHtml(user)}</b>`;
+  $("#app").classList.add("is-loading");
+  $("#userChip").innerHTML = `Olá, <b>${escapeHtml(api.username())}</b>`;
+  try {
+    await reload();
+  } catch (ex) {
+    $("#app").classList.remove("is-loading");
+    if (ex instanceof AuthError) { logout("Sua sessão expirou. Entre de novo."); return; }
+    $("#app").classList.add("hidden");
+    $("#auth").classList.remove("hidden");
+    $("#authError").textContent = ex.status === 0 ? "Sem conexão com o servidor." : "Não foi possível carregar os dados.";
+    return;
+  }
+  $("#app").classList.remove("is-loading");
   selectDay(defaultDay());
+  startSync();
+  offerLegacyImport();
+}
+
+/* ---------------- Sincronização ---------------- */
+
+// Atualiza em segundo plano para ver o que outras pessoas registraram
+async function syncNow() {
+  if (!state || busy || document.hidden || document.body.classList.contains("modal-open")) return;
+  try {
+    // Leve: registros + lista de ids. As fotos só são baixadas de novo se o armário mudou.
+    const light = await api.fetchLight();
+    const known = state.shirts.map((x) => x.id).sort().join(",");
+    if (light.shirtIds.slice().sort().join(",") !== known) {
+      await reload();
+      return;
+    }
+    if (!state) return; // saiu durante a busca
+    state = toState({ shirts: state.shirts, entries: light.entries, settings: light.settings });
+    render();
+  } catch (ex) {
+    if (ex instanceof AuthError) logout("Sua sessão expirou. Entre de novo.");
+    // falha de rede em segundo plano: tenta de novo no próximo ciclo
+  }
+}
+
+function startSync() {
+  stopSync();
+  syncTimer = setInterval(syncNow, SYNC_SECONDS * 1000);
+}
+function stopSync() {
+  clearInterval(syncTimer);
+  syncTimer = null;
+}
+
+/* ---------------- Importação da versão antiga ---------------- */
+
+async function offerLegacyImport() {
+  let legacy = null;
+  try {
+    if (localStorage.getItem(KEY_IMPORT_DISMISSED)) return;
+    legacy = sanitizeState(JSON.parse(localStorage.getItem(LEGACY_DATA)));
+  } catch { return; }
+  if (!legacy) return;
+
+  const entries = Object.entries(legacy.log).filter(([day]) => isMarkable(day));
+  if (!entries.length) { localStorage.removeItem(LEGACY_DATA); return; }
+
+  const ok = await askConfirm({
+    title: "Enviar registros antigos?",
+    html: `Este navegador tem <b>${entries.length}</b> ${entries.length === 1 ? "registro salvo" : "registros salvos"} da versão anterior.
+      Enviar para a nuvem? Dias que já estiverem registrados lá são mantidos.`,
+    ok: "Enviar",
+  });
+  if (!ok) {
+    try { localStorage.setItem(KEY_IMPORT_DISMISSED, "1"); } catch { /* ok */ }
+    return;
+  }
+
+  const known = new Set(state.shirts.map((x) => x.id));
+  const usedIds = new Set(entries.map(([, id]) => id));
+  const shirts = legacy.shirts
+    .filter((x) => !known.has(x.id) && usedIds.has(x.id))
+    .map((x, i) => ({ id: x.id, name: x.name, color: x.color, img: x.img, position: 100 + state.shirts.length + i }));
+  const rows = entries
+    .filter(([, id]) => id === ABSENT || known.has(id) || shirts.some((x) => x.id === id))
+    .map(([day, id]) => (id === ABSENT ? { day, status: "absent", shirt_id: null } : { day, status: "shirt", shirt_id: id }));
+
+  busy = true;
+  try {
+    await api.importShirts(shirts);
+    await api.importEntries(rows);
+    localStorage.removeItem(LEGACY_DATA);
+    await reload();
+    toast("Registros antigos enviados!");
+  } catch (ex) {
+    handleApiError(ex, "Não foi possível enviar os registros antigos.");
+  } finally {
+    busy = false;
+  }
 }
 
 /* ---------------- Cálculos ---------------- */
@@ -698,10 +717,23 @@ async function markShirt(id) {
     danger: absent,
   });
   // Confere de novo: o dia pode ter mudado enquanto a janela estava aberta
-  if (!ok || day !== selectedDay || state.log[day] || !isMarkable(day)) return;
+  if (!ok || busy || day !== selectedDay || state.log[day] || !isMarkable(day)) return;
 
+  busy = true;
+  try {
+    await api.addEntry(day, absent ? null : id);
+  } catch (ex) {
+    if (ex.status === 409 || ex.code === "23505") {
+      toast("Esse dia acabou de ser registrado por outra pessoa.");
+      await reload().catch(() => {});
+    } else {
+      handleApiError(ex);
+    }
+    return;
+  } finally {
+    busy = false;
+  }
   state.log[day] = id;
-  if (!save()) { delete state.log[day]; return; }
   render();
   const run = absent ? 0 : computeStreaks().byDay[day] ?? 0;
   toast(run >= 2 ? `🔥 ${run} seguidas! Aguardando o próximo dia.` : "Registrado! Aguardando o próximo dia.");
@@ -717,9 +749,17 @@ async function unmarkDay(day) {
     ok: "Apagar registro",
     danger: true,
   });
-  if (!ok || !Object.hasOwn(state.log, day)) return;
+  if (!ok || busy || !Object.hasOwn(state.log, day)) return;
+  busy = true;
+  try {
+    await api.deleteEntry(day);
+  } catch (ex) {
+    handleApiError(ex);
+    return;
+  } finally {
+    busy = false;
+  }
   delete state.log[day];
-  save();
   render();
   toast("Registro apagado");
 }
@@ -737,21 +777,36 @@ async function deleteShirt(id) {
     ok: "Remover",
     danger: true,
   });
-  if (!ok || !shirtById(id)) return;
+  if (!ok || busy || !shirtById(id)) return;
+  busy = true;
+  try {
+    await api.deleteShirt(id); // os registros dela saem junto (on delete cascade)
+  } catch (ex) {
+    handleApiError(ex);
+    return;
+  } finally {
+    busy = false;
+  }
   state.shirts = state.shirts.filter((x) => x.id !== id);
   for (const [day, sid] of Object.entries(state.log)) if (sid === id) delete state.log[day];
-  save();
   render();
   toast("Camisa removida");
 }
 
-function renameFriend() {
-  const name = prompt("Nome do amigo:", state.friend);
-  if (name && name.trim()) {
-    state.friend = name.trim().slice(0, 24);
-    save();
-    renderHero();
+async function renameFriend() {
+  const name = prompt("Nome do amigo:", state.friend)?.trim().slice(0, 24);
+  if (!name || name === state.friend || busy) return;
+  busy = true;
+  try {
+    await api.setSetting("friend", name);
+  } catch (ex) {
+    handleApiError(ex);
+    return;
+  } finally {
+    busy = false;
   }
+  state.friend = name;
+  renderHero();
 }
 
 /* ---------------- Modal: nova camisa ---------------- */
@@ -781,7 +836,7 @@ function updatePreview() {
   $("#shirtPreview").innerHTML = pendingImg ? `<img src="${pendingImg}" alt="" />` : shirtSVG($("#shirtColor").value);
 }
 
-// Redimensiona a foto para caber no localStorage
+// Redimensiona a foto para ficar leve no banco
 function resizeImage(file, max = 360) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -826,15 +881,27 @@ async function handlePhoto(e) {
   updatePreview();
 }
 
-function handleAddShirt(e) {
+async function handleAddShirt(e) {
   e.preventDefault();
   const name = $("#shirtName").value.trim().slice(0, MAX_NAME);
-  if (!name) return;
+  if (!name || busy) return;
   if (state.shirts.length >= MAX_SHIRTS) { toast(`O armário aceita até ${MAX_SHIRTS} camisas`); return; }
   const color = COLOR_RE.test($("#shirtColor").value) ? $("#shirtColor").value : "#64748b";
-  const shirt = { id: uid(), name, color, img: pendingImg, createdAt: Date.now() };
-  state.shirts.push(shirt);
-  if (!save()) { state.shirts.pop(); return; }
+  const shirt = { id: uid(), name, color, img: pendingImg };
+  const submit = $("#shirtForm").querySelector('[type="submit"]');
+
+  busy = true;
+  submit.disabled = true;
+  try {
+    await api.addShirt({ ...shirt, position: 100 + state.shirts.length });
+  } catch (ex) {
+    handleApiError(ex);
+    return;
+  } finally {
+    busy = false;
+    submit.disabled = false;
+  }
+  state.shirts.push({ ...shirt, createdAt: Date.now() });
   closeModal();
   render();
   toast(`"${name}" adicionada ao armário`);
@@ -848,7 +915,9 @@ $("#togglePass").addEventListener("click", () => {
   setPasswordVisible(input.type === "password");
   input.focus();
 });
-$("#logoutBtn").addEventListener("click", logout);
+$("#logoutBtn").addEventListener("click", () => logout());
+// Ao voltar para a aba/app, busca o que mudou
+document.addEventListener("visibilitychange", () => { if (!document.hidden) syncNow(); });
 $("#friendName").addEventListener("click", renameFriend);
 $("#calPrev").addEventListener("click", () => { viewMonth = shiftMonth(viewMonth, -1); renderCalendar(); });
 $("#calNext").addEventListener("click", () => { viewMonth = shiftMonth(viewMonth, 1); renderCalendar(); });
@@ -903,10 +972,14 @@ document.addEventListener("keydown", (e) => {
 
 /* ---------------- Init ---------------- */
 
-const sessionUser = validSession();
-if (sessionUser) {
-  enterApp(sessionUser);
+// Limpa a sessão da versão antiga (login local), que não vale mais
+try { LEGACY_KEYS.forEach((k) => localStorage.removeItem(k)); } catch { /* ok */ }
+
+if (!api.configured()) {
+  $("#auth").classList.remove("hidden");
+  $("#authError").textContent = "Configuração do servidor pendente (config.js).";
+} else if (api.loadSession()) {
+  enterApp();
 } else {
-  localStorage.removeItem(KEY_SESSION);
   $("#auth").classList.remove("hidden");
 }

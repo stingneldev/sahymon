@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-title" content="Esquilook" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Só carrega scripts da própria página; imagens locais ou geradas pelo upload; fontes do Google -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://*.supabase.co; object-src 'none'; base-uri 'none'; form-action 'none'" />
   <meta name="referrer" content="no-referrer" />
   <title>Esquilook</title>
   <link rel="icon" href="assets/favicon.ico" sizes="any" />
@@ -144,7 +144,7 @@
       </div>
     </main>
 
-    <footer class="footer container">Feito só por diversão · os dados ficam salvos neste navegador</footer>
+    <footer class="footer container">Feito só por diversão · dados salvos com segurança na nuvem</footer>
   </div>
 
   <!-- ============ MODAL: nova camisa ============ -->
@@ -193,6 +193,8 @@
 
   <div id="toast" class="toast"></div>
 
+  <script src="config.js"></script>
+  <script src="api.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
