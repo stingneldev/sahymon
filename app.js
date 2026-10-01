@@ -192,6 +192,7 @@ async function handleAuth(e) {
   localStorage.removeItem(KEY_LOCK);
   writeJSON(KEY_SESSION, { user, exp: Date.now() + SESSION_DAYS * 86400000 });
   $("#authForm").reset();
+  setPasswordVisible(false);
   enterApp(user);
 }
 
@@ -201,12 +202,22 @@ function validSession() {
   return sess && sess.user === AUTH_USER && Number(sess.exp) > Date.now() ? sess.user : null;
 }
 
+// Olho da senha: alterna entre mostrar e esconder
+function setPasswordVisible(show) {
+  const btn = $("#togglePass");
+  $("#authPass").type = show ? "text" : "password";
+  btn.setAttribute("aria-pressed", String(show));
+  btn.setAttribute("aria-label", show ? "Esconder senha" : "Mostrar senha");
+  btn.title = show ? "Esconder senha" : "Mostrar senha";
+}
+
 function logout() {
   localStorage.removeItem(KEY_SESSION);
   currentUser = null;
   state = null;
   $("#app").classList.add("hidden");
   $("#auth").classList.remove("hidden");
+  setPasswordVisible(false);
 }
 
 /* ---------------- Estado ---------------- */
@@ -657,6 +668,7 @@ function askConfirm({ title, html, media = "", ok = "Confirmar", danger = false 
   $("#confirmOk").textContent = ok;
   $("#confirmOk").className = `btn ${danger ? "btn-danger" : "btn-primary"}`;
   $("#confirmModal").classList.remove("hidden");
+  syncModalLock();
   setTimeout(() => $("#confirmOk").focus(), 50);
   return new Promise((resolve) => { confirmResolve = resolve; });
 }
@@ -664,6 +676,7 @@ function askConfirm({ title, html, media = "", ok = "Confirmar", danger = false 
 function closeConfirm(result) {
   if (!confirmResolve) return;
   $("#confirmModal").classList.add("hidden");
+  syncModalLock();
   confirmResolve(result);
   confirmResolve = null;
 }
@@ -711,14 +724,20 @@ async function unmarkDay(day) {
   toast("Registro apagado");
 }
 
-function deleteShirt(id) {
+async function deleteShirt(id) {
   const s = shirtById(id);
   if (!s) return;
   const uses = getCounts()[id];
-  const msg = uses
-    ? `Remover "${s.name}"? Os ${uses} registro(s) dela também serão apagados.`
-    : `Remover "${s.name}"?`;
-  if (!confirm(msg)) return;
+  const ok = await askConfirm({
+    title: "Remover camisa?",
+    html: uses
+      ? `<b>${escapeHtml(s.name)}</b> sai do armário e ${uses === 1 ? "o registro dela também é apagado" : `os ${uses} registros dela também são apagados`}.`
+      : `<b>${escapeHtml(s.name)}</b> sai do armário.`,
+    media: shirtMedia(s),
+    ok: "Remover",
+    danger: true,
+  });
+  if (!ok || !shirtById(id)) return;
   state.shirts = state.shirts.filter((x) => x.id !== id);
   for (const [day, sid] of Object.entries(state.log)) if (sid === id) delete state.log[day];
   save();
@@ -739,15 +758,24 @@ function renameFriend() {
 
 let pendingImg = null;
 
+// Enquanto uma janela está aberta, a página de trás não rola (importante no celular)
+function syncModalLock() {
+  const open = !$("#modal").classList.contains("hidden") || !$("#confirmModal").classList.contains("hidden");
+  document.body.classList.toggle("modal-open", open);
+}
+
 function openModal() {
   pendingImg = null;
   $("#shirtForm").reset();
   updatePreview();
   $("#modal").classList.remove("hidden");
-  setTimeout(() => $("#shirtName").focus(), 50);
+  syncModalLock();
+  // No celular, focar abre o teclado e cobre a prévia; só foca onde há mouse
+  if (matchMedia("(hover: hover)").matches) setTimeout(() => $("#shirtName").focus(), 50);
 }
 function closeModal() {
   $("#modal").classList.add("hidden");
+  syncModalLock();
 }
 function updatePreview() {
   $("#shirtPreview").innerHTML = pendingImg ? `<img src="${pendingImg}" alt="" />` : shirtSVG($("#shirtColor").value);
@@ -815,6 +843,11 @@ function handleAddShirt(e) {
 /* ---------------- Eventos ---------------- */
 
 $("#authForm").addEventListener("submit", handleAuth);
+$("#togglePass").addEventListener("click", () => {
+  const input = $("#authPass");
+  setPasswordVisible(input.type === "password");
+  input.focus();
+});
 $("#logoutBtn").addEventListener("click", logout);
 $("#friendName").addEventListener("click", renameFriend);
 $("#calPrev").addEventListener("click", () => { viewMonth = shiftMonth(viewMonth, -1); renderCalendar(); });

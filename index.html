@@ -2,7 +2,14 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#4f46e5" />
+  <meta name="color-scheme" content="light" />
+  <meta name="format-detection" content="telephone=no" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Esquilook" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Só carrega scripts da própria página; imagens locais ou geradas pelo upload; fontes do Google -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'" />
   <meta name="referrer" content="no-referrer" />
@@ -10,6 +17,7 @@
   <link rel="icon" href="assets/favicon.ico" sizes="any" />
   <link rel="icon" href="assets/favicon-32.png" type="image/png" sizes="32x32" />
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+  <link rel="manifest" href="manifest.webmanifest" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
@@ -28,12 +36,18 @@
       <form id="authForm" class="form" method="post" autocomplete="on">
         <label class="field">
           <span>Usuário</span>
-          <input id="authUser" type="text" required minlength="3" maxlength="24" autocomplete="username" placeholder="usuário" />
+          <input id="authUser" type="text" required minlength="3" maxlength="24" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="next" placeholder="usuário" />
         </label>
-        <label class="field">
-          <span>Senha</span>
-          <input id="authPass" type="password" required minlength="4" autocomplete="current-password" placeholder="••••••" />
-        </label>
+        <div class="field">
+          <label for="authPass">Senha</label>
+          <div class="pass-wrap">
+            <input id="authPass" type="password" required minlength="4" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="go" placeholder="••••••" />
+            <button id="togglePass" class="pass-toggle" type="button" aria-label="Mostrar senha" aria-pressed="false" title="Mostrar senha">
+              <svg class="eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg class="eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.6 5.1A9.8 9.8 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6C3.7 8.4 2 12 2 12s3.6 7 10 7a9.6 9.6 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/></svg>
+            </button>
+          </div>
+        </div>
         <p id="authError" class="form-error"></p>
         <button id="authSubmit" class="btn btn-primary btn-block" type="submit">Entrar</button>
       </form>
@@ -144,7 +158,7 @@
         <div class="preview" id="shirtPreview"></div>
         <label class="field">
           <span>Nome da camisa</span>
-          <input id="shirtName" type="text" required maxlength="32" placeholder="Ex.: Polo azul marinho" />
+          <input id="shirtName" type="text" required maxlength="32" enterkeyhint="done" placeholder="Ex.: Polo azul marinho" />
         </label>
         <div class="row">
           <label class="field">
