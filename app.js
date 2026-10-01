@@ -25,8 +25,9 @@ const DEFAULT_SHIRTS = [
 const ABSENT = "__faltou__";
 const ABSENT_IMG = "camisas/faltou.webp";
 
-// O calendário começa em outubro de 2026
+// O calendário vai de outubro de 2026 a dezembro de 2027
 const CAL_START = "2026-10-01";
+const CAL_END = "2027-12-31";
 
 // Camisas de exemplo da primeira versão, removidas na migração se nunca foram usadas
 const OLD_DEFAULT_NAMES = ["Preta básica", "Branca lisa", "Azul marinho", "Vermelha", "Cinza mescla", "Verde musgo"];
@@ -223,7 +224,7 @@ function enterApp(user) {
   $("#auth").classList.add("hidden");
   $("#app").classList.remove("hidden");
   $("#userChip").innerHTML = `Olá, <b>${escapeHtml(user)}</b>`;
-  selectDay(todayKey() < CAL_START ? CAL_START : todayKey());
+  selectDay(defaultDay());
 }
 
 /* ---------------- Cálculos ---------------- */
@@ -430,7 +431,25 @@ function shiftMonth(ym, delta) {
   const [y, m] = ym.split("-").map(Number);
   return toKey(new Date(y, m - 1 + delta, 1)).slice(0, 7);
 }
-const lastMonth = () => monthKey(todayKey() < CAL_START ? CAL_START : todayKey());
+const monthLabel = (ym) => {
+  const [y, m] = ym.split("-").map(Number);
+  const t = new Date(y, m - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
+
+// Dia aberto ao entrar ou ao clicar em "Hoje": hoje, limitado ao período do calendário
+function defaultDay() {
+  const t = todayKey();
+  return t < CAL_START ? CAL_START : t > CAL_END ? CAL_END : t;
+}
+
+function fillMonthSelect() {
+  const options = [];
+  for (let ym = monthKey(CAL_START); ym <= monthKey(CAL_END); ym = shiftMonth(ym, 1)) {
+    options.push(`<option value="${ym}">${monthLabel(ym)}</option>`);
+  }
+  $("#calTitle").innerHTML = options.join("");
+}
 
 function selectDay(day) {
   selectedDay = day;
@@ -444,10 +463,10 @@ function renderCalendar() {
   const daysInMonth = new Date(y, m, 0).getDate();
   const today = todayKey();
 
-  const title = first.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
-  $("#calTitle").textContent = title.charAt(0).toUpperCase() + title.slice(1);
+  if (!$("#calTitle").options.length) fillMonthSelect();
+  $("#calTitle").value = viewMonth;
   $("#calPrev").disabled = viewMonth <= monthKey(CAL_START);
-  $("#calNext").disabled = viewMonth >= lastMonth();
+  $("#calNext").disabled = viewMonth >= monthKey(CAL_END);
 
   let html = "";
   for (let i = 0; i < first.getDay(); i++) html += `<span class="cal-cell cal-pad"></span>`;
@@ -605,7 +624,8 @@ $("#logoutBtn").addEventListener("click", logout);
 $("#friendName").addEventListener("click", renameFriend);
 $("#calPrev").addEventListener("click", () => { viewMonth = shiftMonth(viewMonth, -1); renderCalendar(); });
 $("#calNext").addEventListener("click", () => { viewMonth = shiftMonth(viewMonth, 1); renderCalendar(); });
-$("#calToday").addEventListener("click", () => selectDay(todayKey() < CAL_START ? CAL_START : todayKey()));
+$("#calTitle").addEventListener("change", (e) => { viewMonth = e.target.value; renderCalendar(); });
+$("#calToday").addEventListener("click", () => selectDay(defaultDay()));
 $("#calGrid").addEventListener("click", (e) => {
   const cell = e.target.closest("[data-day]");
   if (!cell || cell.disabled) return;
