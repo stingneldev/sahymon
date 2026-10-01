@@ -19,13 +19,14 @@ const SESSION_DAYS = 30;
 const MAX_ATTEMPTS = 5;      // tentativas erradas antes de bloquear
 const LOCK_SECONDS = 30;     // bloqueio cresce a cada nova rodada de erros
 
-const DATA_VERSION = 3;
+const DATA_VERSION = 4;
 
 // Camisas do armário: o esquilo vestindo cada uma
 const DEFAULT_SHIRTS = [
   { id: "brasil-azul", name: "Brasil azul", color: "#1e3a8a", img: "camisas/esquilo_brasil.webp" },
   { id: "chelsea", name: "Chelsea", color: "#1d4ed8", img: "camisas/esquilo_chelsea.webp" },
   { id: "cassino", name: "Grand Hotel Cassino", color: "#4a2511", img: "camisas/esquilo_cassino.webp" },
+  { id: "ifes", name: "IFES preta", color: "#111111", img: "camisas/esquilo_ifes.webp" },
 ];
 
 // Falta: registrada no lugar da camisa, mas não entra no ranking
