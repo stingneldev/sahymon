@@ -11,14 +11,16 @@ const AUTH_SALT = "camisometro";
 const AUTH_HASH = "086f1777dc760c51bc70d9baceb4c9ed8beb81ccc7088b885ae8b31ebfda03e1";
 const dataKey = (user) => `camisometro:data:${user}`;
 
+const DATA_VERSION = 2;
+
+// Camisas do armário: o esquilo vestindo cada uma
 const DEFAULT_SHIRTS = [
-  { name: "Preta básica", color: "#1f2937" },
-  { name: "Branca lisa", color: "#f8fafc" },
-  { name: "Azul marinho", color: "#1e3a8a" },
-  { name: "Vermelha", color: "#dc2626" },
-  { name: "Cinza mescla", color: "#9ca3af" },
-  { name: "Verde musgo", color: "#3f6212" },
+  { id: "brasil-azul", name: "Brasil azul", color: "#1e3a8a", img: "camisas/esquilo_brasil.webp" },
+  { id: "chelsea", name: "Chelsea", color: "#1d4ed8", img: "camisas/esquilo_chelsea.webp" },
 ];
+
+// Camisas de exemplo da primeira versão, removidas na migração se nunca foram usadas
+const OLD_DEFAULT_NAMES = ["Preta básica", "Branca lisa", "Azul marinho", "Vermelha", "Cinza mescla", "Verde musgo"];
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -174,12 +176,24 @@ function logout() {
 
 function loadState(user) {
   const saved = readJSON(dataKey(user), null);
-  if (saved) return saved;
+  if (saved) return migrate(saved);
   return {
+    version: DATA_VERSION,
     friend: "Sahymon",
-    shirts: DEFAULT_SHIRTS.map((s) => ({ id: uid(), ...s, img: null, createdAt: Date.now() })),
+    shirts: DEFAULT_SHIRTS.map((s) => ({ ...s, createdAt: Date.now() })),
     log: {}, // { "YYYY-MM-DD": shirtId }
   };
+}
+
+function migrate(data) {
+  if ((data.version ?? 1) < 2) {
+    const used = new Set(Object.values(data.log));
+    data.shirts = data.shirts.filter((s) => !OLD_DEFAULT_NAMES.includes(s.name) || used.has(s.id));
+    const missing = DEFAULT_SHIRTS.filter((d) => !data.shirts.some((s) => s.id === d.id));
+    data.shirts.unshift(...missing.map((s) => ({ ...s, createdAt: Date.now() })));
+    data.version = 2;
+  }
+  return data;
 }
 
 function save() {
