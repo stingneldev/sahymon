@@ -74,6 +74,10 @@ const api = {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       if (res.status === 429) throw new ApiError("Muitas tentativas. Aguarde alguns minutos.", 429);
+      // Conta criada sem "Auto Confirm User": a senha pode estar certa, mas o login é recusado
+      if (data.error_code === "email_not_confirmed" || /not confirmed/i.test(data.msg || data.error_description || "")) {
+        throw new ApiError("Conta ainda não confirmada no Supabase (marque \"Auto Confirm User\").", res.status, "email_not_confirmed");
+      }
       throw new AuthError(data.error_description || data.msg || "Usuário ou senha inválidos.");
     }
     this.saveSession(data);

@@ -98,7 +98,10 @@ function shirtMedia(shirt) {
 
 // Login só com o nome: "sahymon" vira "sahymon@<loginDomain>" (endereço de fachada da conta no Supabase)
 function loginEmailFor(user) {
-  return /^[a-z0-9._-]{3,24}$/.test(user) && CFG.loginDomain ? `${user}@${CFG.loginDomain}` : null;
+  // Aceita também o endereço completo digitado por engano ("sahymon@esquilook.app")
+  const suffix = `@${CFG.loginDomain}`;
+  if (CFG.loginDomain && user.endsWith(suffix)) user = user.slice(0, -suffix.length);
+  return /^[a-z0-9._-]{3,24}$/.test(user) && CFG.loginDomain ? `${user}${suffix}` : null;
 }
 
 async function handleAuth(e) {
