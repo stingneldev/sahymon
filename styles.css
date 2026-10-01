@@ -59,11 +59,11 @@ button { cursor: pointer; }
 /* ---------- Forms ---------- */
 .form { display: flex; flex-direction: column; gap: 14px; }
 .field { display: flex; flex-direction: column; gap: 6px; font-size: .875rem; font-weight: 500; }
-.field input[type="text"], .field input[type="password"], .date-pick input {
+.field input[type="text"], .field input[type="password"] {
   border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--surface);
   outline: none; transition: border-color .15s, box-shadow .15s;
 }
-.field input:focus, .date-pick input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.field input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
 .field input[type="color"] { width: 64px; height: 42px; border: 1px solid var(--border); border-radius: 10px; padding: 4px; background: var(--surface); }
 .field input[type="file"] { font-size: .85rem; padding: 8px 0; }
 .form-error { color: var(--danger); font-size: .85rem; min-height: 1.2em; }
@@ -129,7 +129,12 @@ button { cursor: pointer; }
 .layout .panel { margin-bottom: 0; }
 .panel-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
 .panel h2 { font-size: 1.15rem; letter-spacing: -.01em; }
-.date-pick { display: flex; align-items: center; gap: 8px; font-size: .85rem; font-weight: 600; color: var(--muted); }
+.layout-cal { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.layout-cal .grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+.layout-cal .card-add { min-height: 0; }
+.marking-day { display: inline-block; color: var(--text); }
+.marking-day::first-letter { text-transform: uppercase; }
+.stat-absent { color: var(--danger); }
 
 /* ---------- Shirt grid ---------- */
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
@@ -212,12 +217,56 @@ button { cursor: pointer; }
 .rank-empty p { font-weight: 600; }
 .rank-empty .muted { font-size: .85rem; }
 
+/* ---------- Calendário ---------- */
+.cal-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.cal-nav strong { font-size: 1rem; }
+.cal-nav .icon-btn { font-size: 1.4rem; line-height: 1; }
+.cal-nav .icon-btn:disabled { opacity: .3; cursor: default; background: transparent; }
+.cal-week, .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.cal-week { margin-bottom: 6px; }
+.cal-week span { text-align: center; font-size: .72rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.cal-cell { aspect-ratio: 1; }
+.cal-day {
+  position: relative; overflow: hidden; padding: 0; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--surface);
+  transition: border-color .15s, transform .1s, box-shadow .15s;
+}
+.cal-day:not(:disabled):hover { border-color: var(--primary); transform: translateY(-1px); }
+.cal-weekend { background: var(--surface-2); }
+.cal-future { opacity: .4; cursor: default; }
+.cal-num {
+  position: absolute; top: 4px; left: 4px; z-index: 1; min-width: 20px; height: 20px; padding: 0 5px;
+  border-radius: 99px; font-size: .72rem; font-weight: 700; line-height: 20px; text-align: center;
+}
+.cal-filled .cal-num, .cal-absent .cal-num { background: rgba(255,255,255,.92); box-shadow: 0 1px 2px rgba(0,0,0,.15); }
+.cal-today .cal-num { background: var(--primary); color: #fff; }
+.cal-media { position: absolute; inset: 0; display: grid; place-items: center; }
+.cal-media img { width: 100%; height: 100%; object-fit: cover; object-position: center 22%; }
+.cal-media .shirt-art { width: 70%; height: 70%; filter: none; }
+.cal-filled { border-color: #c7d2fe; background: #fff; }
+.cal-absent { border-color: #fca5a5; background: #000; }
+.cal-absent .cal-media img { object-position: center 30%; }
+.cal-selected { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft), inset 0 0 0 1px var(--primary); }
+.cal-absent.cal-selected { border-color: var(--danger); box-shadow: 0 0 0 3px #fee2e2, inset 0 0 0 1px var(--danger); }
+.cal-summary { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 14px; font-size: .82rem; color: var(--muted); }
+.cal-summary span { display: inline-flex; align-items: center; gap: 6px; }
+
+/* ---------- Card de falta ---------- */
+.card-absent .card-media, .card-absent .card-media:has(img) { background: #000; }
+.card-absent .card-name { color: var(--danger); }
+.card-absent:hover { border-color: #fca5a5; }
+.card-absent.selected { border-color: var(--danger); box-shadow: 0 0 0 4px #fee2e2; }
+.card-absent.selected::after { background: var(--danger); }
+
 /* ---------- History ---------- */
 .history { list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
 .history li { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; }
 .history .rank-thumb { width: 36px; height: 36px; flex-shrink: 0; }
 .history .h-info { flex: 1; min-width: 0; }
 .history .h-date { font-size: .78rem; color: var(--muted); text-transform: capitalize; }
+.history .h-absent { border-color: #fecaca; background: #fef2f2; }
+.history .h-absent .rank-thumb { background: #000; border-color: #fecaca; }
+.history .h-absent .h-name { color: var(--danger); }
 .history .h-name { font-weight: 600; font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .empty { color: var(--muted); font-size: .9rem; padding: 12px 0; list-style: none; }
 
@@ -243,7 +292,7 @@ button { cursor: pointer; }
 
 /* ---------- Responsive ---------- */
 @media (max-width: 900px) {
-  .layout { grid-template-columns: 1fr; }
+  .layout, .layout-cal { grid-template-columns: 1fr; }
   .stats { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 560px) {
@@ -252,6 +301,8 @@ button { cursor: pointer; }
   .hero-today { width: 110px; height: 110px; }
   .panel { padding: 18px; }
   .grid { grid-template-columns: repeat(2, 1fr); }
+  .cal-week, .cal-grid { gap: 4px; }
+  .cal-num { top: 2px; left: 2px; min-width: 18px; height: 18px; line-height: 18px; font-size: .66rem; padding: 0 4px; }
   .card-del { opacity: 1; }
   .user-chip { display: none; }
 }

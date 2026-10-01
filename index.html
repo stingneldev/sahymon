@@ -62,26 +62,55 @@
 
       <!-- Stats -->
       <section class="stats">
-        <div class="stat"><span class="stat-value" id="statDays">0</span><span class="stat-label">Dias registrados</span></div>
-        <div class="stat"><span class="stat-value" id="statShirts">0</span><span class="stat-label">Camisas no armário</span></div>
+        <div class="stat"><span class="stat-value" id="statDays">0</span><span class="stat-label">Dias com camisa</span></div>
+        <div class="stat"><span class="stat-value stat-absent" id="statAbsent">0</span><span class="stat-label">Faltas</span></div>
         <div class="stat"><span class="stat-value" id="statStreak">0</span><span class="stat-label">Vezes seguidas com a atual</span></div>
         <div class="stat"><span class="stat-value stat-value-sm" id="statFav">—</span><span class="stat-label">Camisa favorita</span></div>
       </section>
 
-      <div class="layout">
-        <!-- Shirts -->
+      <div class="layout layout-cal">
+        <!-- Calendário -->
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Calendário</h2>
+              <p class="muted">Escolha o dia e marque a camisa ou a falta.</p>
+            </div>
+            <button id="calToday" class="btn btn-ghost btn-sm" type="button">Hoje</button>
+          </div>
+          <div class="cal-nav">
+            <button id="calPrev" class="icon-btn" type="button" aria-label="Mês anterior">‹</button>
+            <strong id="calTitle"></strong>
+            <button id="calNext" class="icon-btn" type="button" aria-label="Próximo mês">›</button>
+          </div>
+          <div class="cal-week">
+            <span>Dom</span><span>Seg</span><span>Ter</span><span>Qua</span><span>Qui</span><span>Sex</span><span>Sáb</span>
+          </div>
+          <div class="cal-grid" id="calGrid"></div>
+          <div class="cal-summary" id="calSummary"></div>
+        </section>
+
+        <!-- Armário -->
         <section class="panel">
           <div class="panel-head">
             <div>
               <h2>Armário</h2>
-              <p class="muted">Clique em uma camisa para marcar no dia selecionado.</p>
+              <p class="muted">Marcando: <b class="marking-day" id="markingDay"></b></p>
             </div>
-            <label class="date-pick">
-              <span>Dia</span>
-              <input type="date" id="dayInput" />
-            </label>
+            <button id="clearDay" class="btn btn-ghost btn-sm hidden" type="button">Limpar dia</button>
           </div>
           <div class="grid" id="shirtGrid"></div>
+        </section>
+      </div>
+
+      <div class="layout">
+        <!-- Histórico -->
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Histórico</h2>
+            <span class="muted" id="historyCount"></span>
+          </div>
+          <ul class="history" id="history"></ul>
         </section>
 
         <!-- Ranking -->
@@ -95,15 +124,6 @@
           <div id="ranking"></div>
         </aside>
       </div>
-
-      <!-- History -->
-      <section class="panel">
-        <div class="panel-head">
-          <h2>Histórico</h2>
-          <span class="muted" id="historyCount"></span>
-        </div>
-        <ul class="history" id="history"></ul>
-      </section>
     </main>
 
     <footer class="footer container">Feito só por diversão · os dados ficam salvos neste navegador</footer>

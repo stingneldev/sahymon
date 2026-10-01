@@ -12,13 +12,21 @@ const AUTH_SALT = "camisometro";
 const AUTH_HASH = "086f1777dc760c51bc70d9baceb4c9ed8beb81ccc7088b885ae8b31ebfda03e1";
 const dataKey = (user) => `camisometro:data:${user}`;
 
-const DATA_VERSION = 2;
+const DATA_VERSION = 3;
 
 // Camisas do armário: o esquilo vestindo cada uma
 const DEFAULT_SHIRTS = [
   { id: "brasil-azul", name: "Brasil azul", color: "#1e3a8a", img: "camisas/esquilo_brasil.webp" },
   { id: "chelsea", name: "Chelsea", color: "#1d4ed8", img: "camisas/esquilo_chelsea.webp" },
+  { id: "cassino", name: "Grand Hotel Cassino", color: "#4a2511", img: "camisas/esquilo_cassino.webp" },
 ];
+
+// Falta: registrada no lugar da camisa, mas não entra no ranking
+const ABSENT = "__faltou__";
+const ABSENT_IMG = "camisas/faltou.webp";
+
+// O calendário começa em outubro de 2026
+const CAL_START = "2026-10-01";
 
 // Camisas de exemplo da primeira versão, removidas na migração se nunca foram usadas
 const OLD_DEFAULT_NAMES = ["Preta básica", "Branca lisa", "Azul marinho", "Vermelha", "Cinza mescla", "Verde musgo"];
@@ -27,6 +35,8 @@ const $ = (sel) => document.querySelector(sel);
 
 let currentUser = null;
 let state = null;
+let selectedDay = null; // "YYYY-MM-DD" marcado no calendário
+let viewMonth = null;   // "YYYY-MM" exibido no calendário
 
 /* ---------------- Utils ---------------- */
 
@@ -194,6 +204,11 @@ function migrate(data) {
     data.shirts.unshift(...missing.map((s) => ({ ...s, createdAt: Date.now() })));
     data.version = 2;
   }
+  if (data.version < DATA_VERSION) {
+    const missing = DEFAULT_SHIRTS.filter((d) => !data.shirts.some((s) => s.id === d.id));
+    data.shirts.push(...missing.map((s) => ({ ...s, createdAt: Date.now() })));
+    data.version = DATA_VERSION;
+  }
   return data;
 }
 
@@ -208,9 +223,7 @@ function enterApp(user) {
   $("#auth").classList.add("hidden");
   $("#app").classList.remove("hidden");
   $("#userChip").innerHTML = `Olá, <b>${escapeHtml(user)}</b>`;
-  $("#dayInput").value = todayKey();
-  $("#dayInput").max = todayKey();
-  render();
+  selectDay(todayKey() < CAL_START ? CAL_START : todayKey());
 }
 
 /* ---------------- Cálculos ---------------- */
@@ -224,6 +237,15 @@ function getCounts() {
 function sortedLog() {
   return Object.entries(state.log)
     .filter(([, id]) => state.shirts.some((s) => s.id === id))
+    .sort((a, b) => b[0].localeCompare(a[0]));
+}
+
+const countAbsences = () => Object.values(state.log).filter((id) => id === ABSENT).length;
+
+// Todos os registros (camisas e faltas), do mais recente ao mais antigo
+function allEntries() {
+  return Object.entries(state.log)
+    .filter(([, id]) => id === ABSENT || state.shirts.some((s) => s.id === id))
     .sort((a, b) => b[0].localeCompare(a[0]));
 }
 
@@ -246,6 +268,7 @@ const shirtById = (id) => state.shirts.find((s) => s.id === id);
 function render() {
   renderHero();
   renderStats();
+  renderCalendar();
   renderGrid();
   renderRanking();
   renderHistory();
@@ -255,11 +278,14 @@ function renderHero() {
   $("#friendName").textContent = state.friend;
   $("#todayLabel").textContent = formatDate(todayKey(), { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
   const shirt = shirtById(state.log[todayKey()]);
-  if (shirt) {
+  if (state.log[todayKey()] === ABSENT) {
+    $("#todayStatus").innerHTML = `Hoje ele <b>faltou à aula</b> 💔`;
+    $("#heroToday").innerHTML = `<img src="${ABSENT_IMG}" alt="Faltou à aula" />`;
+  } else if (shirt) {
     $("#todayStatus").innerHTML = `Hoje foi de <b>${escapeHtml(shirt.name)}</b>. Clique em outra camisa para trocar.`;
     $("#heroToday").innerHTML = shirtMedia(shirt);
   } else {
-    $("#todayStatus").textContent = "Ainda não marcado hoje. Escolha a camisa no armário abaixo.";
+    $("#todayStatus").textContent = "Ainda não marcado hoje. Escolha a camisa no armário.";
     $("#heroToday").innerHTML = `<img class="hero-logo" src="assets/logo.webp" alt="" />`;
   }
 }
@@ -268,7 +294,7 @@ function renderStats() {
   const counts = getCounts();
   const entries = sortedLog();
   $("#statDays").textContent = entries.length;
-  $("#statShirts").textContent = state.shirts.length;
+  $("#statAbsent").textContent = countAbsences();
   $("#statStreak").textContent = getStreak();
   const top = state.shirts.slice().sort((a, b) => counts[b.id] - counts[a.id])[0];
   $("#statFav").textContent = top && counts[top.id] > 0 ? top.name : "—";
@@ -277,7 +303,10 @@ function renderStats() {
 
 function renderGrid() {
   const counts = getCounts();
-  const selectedId = state.log[$("#dayInput").value];
+  const selectedId = state.log[selectedDay];
+  const absences = countAbsences();
+  $("#markingDay").textContent = formatDate(selectedDay, { weekday: "long", day: "2-digit", month: "long" });
+  $("#clearDay").classList.toggle("hidden", !selectedId);
   const cards = state.shirts.map((s) => `
     <button class="card ${s.id === selectedId ? "selected" : ""}" data-id="${s.id}" type="button">
       <div class="card-media">${shirtMedia(s)}</div>
@@ -286,7 +315,14 @@ function renderGrid() {
       <span class="card-del" data-del="${s.id}" role="button" aria-label="Remover camisa" title="Remover">✕</span>
     </button>`).join("");
 
-  $("#shirtGrid").innerHTML = cards + `
+  const absentCard = `
+    <button class="card card-absent ${selectedId === ABSENT ? "selected" : ""}" data-id="${ABSENT}" type="button">
+      <div class="card-media"><img src="${ABSENT_IMG}" alt="Faltou à aula" /></div>
+      <div class="card-name">Faltou à aula</div>
+      <div class="card-meta">${absences} ${absences === 1 ? "falta" : "faltas"}</div>
+    </button>`;
+
+  $("#shirtGrid").innerHTML = cards + absentCard + `
     <button class="card card-add" id="addCard" type="button">
       <span class="plus">+</span>
       <span>Nova camisa</span>
@@ -309,7 +345,7 @@ function renderRanking() {
   const daysLabel = (c) => `${c} ${c === 1 ? "dia" : "dias"}`;
   const shortDate = (key) => formatDate(key, { day: "2-digit", month: "2-digit" });
 
-  $("#rankSub").textContent = total ? `${daysLabel(total)} registrados` : "Quem vai liderar?";
+  $("#rankSub").textContent = total ? `${daysLabel(total)} com camisa (faltas não contam)` : "Quem vai liderar?";
 
   if (!used.length) {
     $("#ranking").innerHTML = `
@@ -366,37 +402,107 @@ function renderRanking() {
 }
 
 function renderHistory() {
-  const entries = sortedLog();
+  const entries = allEntries();
   $("#historyCount").textContent = entries.length ? `${entries.length} registro${entries.length > 1 ? "s" : ""}` : "";
   if (!entries.length) {
     $("#history").innerHTML = `<li class="empty">O histórico aparece aqui conforme você marca os dias.</li>`;
     return;
   }
   $("#history").innerHTML = entries.slice(0, 30).map(([day, id]) => {
+    const absent = id === ABSENT;
     const s = shirtById(id);
     return `
-      <li>
-        <div class="rank-thumb">${shirtMedia(s)}</div>
+      <li class="${absent ? "h-absent" : ""}">
+        <div class="rank-thumb">${absent ? `<img src="${ABSENT_IMG}" alt="" />` : shirtMedia(s)}</div>
         <div class="h-info">
           <div class="h-date">${formatDate(day, { weekday: "short", day: "2-digit", month: "short" })}</div>
-          <div class="h-name">${escapeHtml(s.name)}</div>
+          <div class="h-name">${absent ? "Faltou à aula" : escapeHtml(s.name)}</div>
         </div>
         <button class="icon-btn" data-unmark="${day}" type="button" title="Remover registro" aria-label="Remover registro">✕</button>
       </li>`;
   }).join("");
 }
 
+/* ---------------- Calendário ---------------- */
+
+const monthKey = (key) => key.slice(0, 7);
+function shiftMonth(ym, delta) {
+  const [y, m] = ym.split("-").map(Number);
+  return toKey(new Date(y, m - 1 + delta, 1)).slice(0, 7);
+}
+const lastMonth = () => monthKey(todayKey() < CAL_START ? CAL_START : todayKey());
+
+function selectDay(day) {
+  selectedDay = day;
+  viewMonth = monthKey(day);
+  render();
+}
+
+function renderCalendar() {
+  const [y, m] = viewMonth.split("-").map(Number);
+  const first = new Date(y, m - 1, 1);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const today = todayKey();
+
+  const title = first.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  $("#calTitle").textContent = title.charAt(0).toUpperCase() + title.slice(1);
+  $("#calPrev").disabled = viewMonth <= monthKey(CAL_START);
+  $("#calNext").disabled = viewMonth >= lastMonth();
+
+  let html = "";
+  for (let i = 0; i < first.getDay(); i++) html += `<span class="cal-cell cal-pad"></span>`;
+
+  let present = 0, absent = 0, pending = 0;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = `${viewMonth}-${String(d).padStart(2, "0")}`;
+    const id = state.log[key];
+    const shirt = shirtById(id);
+    const future = key > today;
+    const weekend = [0, 6].includes(fromKey(key).getDay());
+    if (id === ABSENT) absent++;
+    else if (shirt) present++;
+    else if (!future && !weekend) pending++;
+
+    const cls = ["cal-cell", "cal-day"];
+    if (future) cls.push("cal-future");
+    if (weekend) cls.push("cal-weekend");
+    if (key === today) cls.push("cal-today");
+    if (key === selectedDay) cls.push("cal-selected");
+    if (id === ABSENT) cls.push("cal-absent");
+    else if (shirt) cls.push("cal-filled");
+
+    const media = id === ABSENT
+      ? `<img src="${ABSENT_IMG}" alt="" />`
+      : shirt ? (shirt.img ? `<img src="${shirt.img}" alt="" />` : shirtSVG(shirt.color)) : "";
+    const label = formatDate(key, { weekday: "long", day: "2-digit", month: "long" }) +
+      (id === ABSENT ? " — faltou" : shirt ? ` — ${shirt.name}` : "");
+
+    html += `
+      <button class="${cls.join(" ")}" data-day="${key}" type="button" ${future ? "disabled" : ""}
+              title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">
+        <span class="cal-num">${d}</span>
+        ${media ? `<span class="cal-media">${media}</span>` : ""}
+      </button>`;
+  }
+  $("#calGrid").innerHTML = html;
+
+  $("#calSummary").innerHTML = `
+    <span><i class="dot" style="background:var(--primary)"></i>${present} com camisa</span>
+    <span><i class="dot" style="background:var(--danger)"></i>${absent} ${absent === 1 ? "falta" : "faltas"}</span>
+    <span><i class="dot" style="background:var(--border)"></i>${pending} sem registro (dias úteis)</span>`;
+}
+
 /* ---------------- Ações ---------------- */
 
 function markShirt(id) {
-  const day = $("#dayInput").value || todayKey();
-  const shirt = shirtById(id);
+  const day = selectedDay;
+  const when = formatDate(day, { day: "2-digit", month: "short" });
   if (state.log[day] === id) {
     delete state.log[day];
-    toast(`Registro de ${formatDate(day, { day: "2-digit", month: "short" })} removido`);
+    toast(`Registro de ${when} removido`);
   } else {
     state.log[day] = id;
-    toast(`✔ ${shirt.name} marcada em ${formatDate(day, { day: "2-digit", month: "short" })}`);
+    toast(id === ABSENT ? `💔 Falta registrada em ${when}` : `✔ ${shirtById(id).name} marcada em ${when}`);
   }
   save();
   render();
@@ -497,7 +603,24 @@ function handleAddShirt(e) {
 $("#authForm").addEventListener("submit", handleAuth);
 $("#logoutBtn").addEventListener("click", logout);
 $("#friendName").addEventListener("click", renameFriend);
-$("#dayInput").addEventListener("change", renderGrid);
+$("#calPrev").addEventListener("click", () => { viewMonth = shiftMonth(viewMonth, -1); renderCalendar(); });
+$("#calNext").addEventListener("click", () => { viewMonth = shiftMonth(viewMonth, 1); renderCalendar(); });
+$("#calToday").addEventListener("click", () => selectDay(todayKey() < CAL_START ? CAL_START : todayKey()));
+$("#calGrid").addEventListener("click", (e) => {
+  const cell = e.target.closest("[data-day]");
+  if (!cell || cell.disabled) return;
+  selectDay(cell.dataset.day);
+  // No celular o armário fica abaixo do calendário: rola até ele
+  if (matchMedia("(max-width: 900px)").matches) {
+    $("#shirtGrid").closest(".panel").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+});
+$("#clearDay").addEventListener("click", () => {
+  delete state.log[selectedDay];
+  save();
+  render();
+  toast("Registro do dia removido");
+});
 
 $("#shirtGrid").addEventListener("click", (e) => {
   const del = e.target.closest("[data-del]");
