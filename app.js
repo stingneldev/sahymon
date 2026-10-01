@@ -5,12 +5,19 @@
 
 // As chaves mantêm o nome antigo (Camisômetro) para não perder dados já salvos
 const KEY_SESSION = "camisometro:session";
-
-// Login único. A senha não fica em texto puro: guardamos só o SHA-256 de "sal:senha".
-const AUTH_USER = "sahymon";
-const AUTH_SALT = "camisometro";
-const AUTH_HASH = "086f1777dc760c51bc70d9baceb4c9ed8beb81ccc7088b885ae8b31ebfda03e1";
+const KEY_LOCK = "camisometro:login-lock";
 const dataKey = (user) => `camisometro:data:${user}`;
+
+// Login único. A senha não fica no código: guardamos só o PBKDF2-SHA256 dela,
+// com sal aleatório e muitas iterações para encarecer tentativas de adivinhação.
+const AUTH_USER = "sahymon";
+const AUTH_SALT = "b5a8eb885c77ed2920ea48db01e87b12";
+const AUTH_ITERATIONS = 600000;
+const AUTH_HASH = "4122321467d4aa963d81a624c4becf6e3d68e0bf8b0e274b44bbc969a1fda772";
+
+const SESSION_DAYS = 30;
+const MAX_ATTEMPTS = 5;      // tentativas erradas antes de bloquear
+const LOCK_SECONDS = 30;     // bloqueio cresce a cada nova rodada de erros
 
 const DATA_VERSION = 3;
 
@@ -31,6 +38,16 @@ const CAL_END = "2027-12-31";
 
 // Camisas de exemplo da primeira versão, removidas na migração se nunca foram usadas
 const OLD_DEFAULT_NAMES = ["Preta básica", "Branca lisa", "Azul marinho", "Vermelha", "Cinza mescla", "Verde musgo"];
+
+// Formatos aceitos ao carregar dados do localStorage (que pode ser editado à mão)
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const ID_RE = /^[a-z0-9_-]{1,40}$/i;
+const COLOR_RE = /^#[0-9a-f]{6}$/i;
+const IMG_RE = /^(camisas\/[a-z0-9_-]+\.webp|data:image\/(jpeg|png|webp);base64,[a-z0-9+/=]+)$/i;
+const MAX_SHIRTS = 50;
+const MAX_NAME = 32;
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const MAX_UPLOAD_PIXELS = 40_000_000;
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -89,51 +106,16 @@ function toast(msg) {
   toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
 }
 
-async function hashPassword(password, salt) {
-  const bytes = new TextEncoder().encode(`${salt}:${password}`);
-  if (window.crypto?.subtle) {
-    const buf = await crypto.subtle.digest("SHA-256", bytes);
-    return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
-  }
-  return sha256(bytes); // contextos sem crypto.subtle (ex.: http por IP na rede local)
-}
+const hexToBytes = (hex) => new Uint8Array(hex.match(/../g).map((h) => parseInt(h, 16)));
 
-// SHA-256 em JS puro, usado só como fallback
-function sha256(bytes) {
-  const K = [];
-  const H = [];
-  const isPrime = (n) => { for (let i = 2; i * i <= n; i++) if (n % i === 0) return false; return true; };
-  const frac = (x) => ((x - Math.floor(x)) * 2 ** 32) >>> 0;
-  for (let n = 2, i = 0; i < 64; n++) {
-    if (!isPrime(n)) continue;
-    if (i < 8) H[i] = frac(n ** (1 / 2));
-    K[i++] = frac(n ** (1 / 3));
-  }
-  const len = bytes.length;
-  const padded = new Uint8Array(((len + 9 + 63) >> 6) << 6);
-  padded.set(bytes);
-  padded[len] = 0x80;
-  const view = new DataView(padded.buffer);
-  view.setUint32(padded.length - 4, len * 8);
-  view.setUint32(padded.length - 8, Math.floor(len / 2 ** 29));
-  const rotr = (x, n) => (x >>> n) | (x << (32 - n));
-  const W = new Uint32Array(64);
-  for (let off = 0; off < padded.length; off += 64) {
-    for (let t = 0; t < 16; t++) W[t] = view.getUint32(off + t * 4);
-    for (let t = 16; t < 64; t++) {
-      const s0 = rotr(W[t - 15], 7) ^ rotr(W[t - 15], 18) ^ (W[t - 15] >>> 3);
-      const s1 = rotr(W[t - 2], 17) ^ rotr(W[t - 2], 19) ^ (W[t - 2] >>> 10);
-      W[t] = (W[t - 16] + s0 + W[t - 7] + s1) >>> 0;
-    }
-    let [a, b, c, d, e, f, g, h] = H;
-    for (let t = 0; t < 64; t++) {
-      const t1 = (h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[t] + W[t]) >>> 0;
-      const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
-      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
-    }
-    [a, b, c, d, e, f, g, h].forEach((v, i) => (H[i] = (H[i] + v) >>> 0));
-  }
-  return H.map((v) => v.toString(16).padStart(8, "0")).join("");
+async function hashPassword(password) {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", hash: "SHA-256", salt: hexToBytes(AUTH_SALT), iterations: AUTH_ITERATIONS },
+    key,
+    256,
+  );
+  return [...new Uint8Array(bits)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 /* ---------------- Visual da camisa ---------------- */
@@ -145,6 +127,7 @@ function isLight(hex) {
 }
 
 function shirtSVG(color) {
+  if (!COLOR_RE.test(color)) color = "#64748b";
   const stroke = isLight(color) ? "#cbd5e1" : "rgba(0,0,0,.18)";
   return `
     <svg class="shirt-art" viewBox="0 0 100 100" aria-hidden="true">
@@ -155,25 +138,63 @@ function shirtSVG(color) {
 }
 
 function shirtMedia(shirt) {
-  return shirt.img ? `<img src="${shirt.img}" alt="${escapeHtml(shirt.name)}" />` : shirtSVG(shirt.color);
+  return shirt.img ? `<img src="${escapeHtml(shirt.img)}" alt="${escapeHtml(shirt.name)}" />` : shirtSVG(shirt.color);
 }
 
 /* ---------------- Auth ---------------- */
 
+function getLock() {
+  const lock = readJSON(KEY_LOCK, {});
+  return { fails: Number(lock.fails) || 0, until: Number(lock.until) || 0 };
+}
+
 async function handleAuth(e) {
   e.preventDefault();
-  const user = $("#authUser").value.trim().toLowerCase();
-  const pass = $("#authPass").value;
+  const err = $("#authError");
+  const btn = $("#authSubmit");
 
-  if (user !== AUTH_USER || (await hashPassword(pass, AUTH_SALT)) !== AUTH_HASH) {
-    $("#authError").textContent = "Usuário ou senha inválidos.";
+  if (!window.crypto?.subtle) {
+    err.textContent = "Abra a página por https:// ou localhost para entrar.";
     return;
   }
 
-  $("#authError").textContent = "";
-  localStorage.setItem(KEY_SESSION, user);
+  const lock = getLock();
+  const wait = Math.ceil((lock.until - Date.now()) / 1000);
+  if (wait > 0) {
+    err.textContent = `Muitas tentativas. Aguarde ${wait}s.`;
+    return;
+  }
+
+  const user = $("#authUser").value.trim().toLowerCase();
+  const pass = $("#authPass").value;
+
+  btn.disabled = true;
+  btn.textContent = "Verificando…";
+  const ok = user === AUTH_USER && (await hashPassword(pass)) === AUTH_HASH;
+  btn.disabled = false;
+  btn.textContent = "Entrar";
+
+  if (!ok) {
+    lock.fails++;
+    if (lock.fails % MAX_ATTEMPTS === 0) lock.until = Date.now() + LOCK_SECONDS * 1000 * (lock.fails / MAX_ATTEMPTS);
+    writeJSON(KEY_LOCK, lock);
+    err.textContent = lock.until > Date.now()
+      ? `Muitas tentativas. Aguarde ${Math.ceil((lock.until - Date.now()) / 1000)}s.`
+      : "Usuário ou senha inválidos.";
+    return;
+  }
+
+  err.textContent = "";
+  localStorage.removeItem(KEY_LOCK);
+  writeJSON(KEY_SESSION, { user, exp: Date.now() + SESSION_DAYS * 86400000 });
   $("#authForm").reset();
   enterApp(user);
+}
+
+// Sessão salva = usuário + validade. Formatos antigos ou vencidos pedem login de novo.
+function validSession() {
+  const sess = readJSON(KEY_SESSION, null);
+  return sess && sess.user === AUTH_USER && Number(sess.exp) > Date.now() ? sess.user : null;
 }
 
 function logout() {
@@ -187,7 +208,7 @@ function logout() {
 /* ---------------- Estado ---------------- */
 
 function loadState(user) {
-  const saved = readJSON(dataKey(user), null);
+  const saved = sanitizeState(readJSON(dataKey(user), null));
   if (saved) return migrate(saved);
   return {
     version: DATA_VERSION,
@@ -195,6 +216,33 @@ function loadState(user) {
     shirts: DEFAULT_SHIRTS.map((s) => ({ ...s, createdAt: Date.now() })),
     log: {}, // { "YYYY-MM-DD": shirtId }
   };
+}
+
+// Descarta tudo que não tiver o formato esperado (dados corrompidos ou editados à mão)
+function sanitizeState(data) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  const ids = new Set();
+  const shirts = (Array.isArray(data.shirts) ? data.shirts : [])
+    .filter((x) => x && typeof x === "object")
+    .map((x) => ({
+      id: String(x.id ?? ""),
+      name: String(x.name ?? "").trim().slice(0, MAX_NAME),
+      color: COLOR_RE.test(x.color) ? x.color : "#64748b",
+      img: typeof x.img === "string" && IMG_RE.test(x.img) ? x.img : null,
+      createdAt: Number(x.createdAt) || Date.now(),
+    }))
+    .filter((x) => ID_RE.test(x.id) && x.id !== ABSENT && x.name && !ids.has(x.id) && ids.add(x.id))
+    .slice(0, MAX_SHIRTS);
+
+  const log = {};
+  const rawLog = data.log && typeof data.log === "object" ? data.log : {};
+  for (const [day, id] of Object.entries(rawLog)) {
+    if (DAY_RE.test(day) && (id === ABSENT || ids.has(id))) log[day] = id;
+  }
+
+  const friend = typeof data.friend === "string" && data.friend.trim() ? data.friend.trim().slice(0, 24) : "Sahymon";
+  const version = Number.isInteger(data.version) ? data.version : 1;
+  return { version, friend, shirts, log };
 }
 
 function migrate(data) {
@@ -231,7 +279,7 @@ function enterApp(user) {
 
 function getCounts() {
   const counts = Object.fromEntries(state.shirts.map((s) => [s.id, 0]));
-  Object.values(state.log).forEach((id) => { if (id in counts) counts[id]++; });
+  Object.values(state.log).forEach((id) => { if (Object.hasOwn(counts, id)) counts[id]++; });
   return counts;
 }
 
@@ -250,17 +298,29 @@ function allEntries() {
     .sort((a, b) => b[0].localeCompare(a[0]));
 }
 
-function getStreak() {
-  const entries = sortedLog();
-  if (!entries.length) return 0;
-  const first = entries[0][1];
-  let n = 0;
-  for (const [, id] of entries) {
-    if (id !== first) break;
-    n++;
+// Streak: registros seguidos com a mesma camisa. Faltas e dias sem registro não quebram
+// a sequência; só uma camisa diferente quebra.
+function computeStreaks() {
+  const chrono = sortedLog().reverse(); // do mais antigo ao mais recente
+  const byDay = {};
+  const bestByShirt = {};
+  let best = { id: null, count: 0 };
+  let run = 0, prev = null;
+  for (const [day, id] of chrono) {
+    run = id === prev ? run + 1 : 1;
+    prev = id;
+    byDay[day] = run;
+    bestByShirt[id] = Math.max(bestByShirt[id] ?? 0, run);
+    if (run > best.count) best = { id, count: run };
   }
-  return n;
+  const last = chrono.at(-1);
+  const current = last ? { id: last[1], count: run, day: last[0] } : { id: null, count: 0, day: null };
+  return { byDay, bestByShirt, best, current };
 }
+
+// 0 = sem fogo, 1 = 2 seguidas, 2 = 3–4 seguidas, 3 = 5 ou mais
+const fireLevel = (n) => (n >= 5 ? 3 : n >= 3 ? 2 : n >= 2 ? 1 : 0);
+const flame = (n) => `<span class="flame flame-${fireLevel(n)}" aria-hidden="true">🔥</span>`;
 
 const shirtById = (id) => state.shirts.find((s) => s.id === id);
 
@@ -289,6 +349,14 @@ function renderHero() {
     $("#todayStatus").textContent = "Ainda não marcado hoje. Escolha a camisa no armário.";
     $("#heroToday").innerHTML = `<img class="hero-logo" src="assets/logo.webp" alt="" />`;
   }
+
+  const { current } = computeStreaks();
+  const streakShirt = shirtById(current.id);
+  const hasStreak = current.count >= 2 && streakShirt;
+  $("#heroStreak").classList.toggle("hidden", !hasStreak);
+  if (hasStreak) {
+    $("#heroStreak").innerHTML = `${flame(current.count)} <b>${current.count}</b> seguidas de ${escapeHtml(streakShirt.name)}`;
+  }
 }
 
 function renderStats() {
@@ -296,7 +364,14 @@ function renderStats() {
   const entries = sortedLog();
   $("#statDays").textContent = entries.length;
   $("#statAbsent").textContent = countAbsences();
-  $("#statStreak").textContent = getStreak();
+  const { current, best } = computeStreaks();
+  const on = current.count >= 2;
+  $("#statStreak").innerHTML = `${flame(on ? current.count : 0)} ${current.count}`;
+  $("#streakCard").classList.toggle("on", on);
+  $("#streakBest").textContent = best.count >= 2 ? `· recorde ${best.count}` : "";
+  $("#streakCard").title = on
+    ? `${current.count} registros seguidos com ${shirtById(current.id).name}`
+    : "Acende quando ele repete a mesma camisa";
   const top = state.shirts.slice().sort((a, b) => counts[b.id] - counts[a.id])[0];
   $("#statFav").textContent = top && counts[top.id] > 0 ? top.name : "—";
   $("#statFav").title = $("#statFav").textContent;
@@ -308,13 +383,18 @@ function renderGrid() {
   const absences = countAbsences();
   $("#markingDay").textContent = formatDate(selectedDay, { weekday: "long", day: "2-digit", month: "long" });
   $("#clearDay").classList.toggle("hidden", !selectedId);
-  const cards = state.shirts.map((s) => `
-    <button class="card ${s.id === selectedId ? "selected" : ""}" data-id="${s.id}" type="button">
+  const { current } = computeStreaks();
+  const cards = state.shirts.map((s) => {
+    const fire = current.id === s.id && current.count >= 2
+      ? ` · <span class="card-fire">${flame(current.count)}${current.count} seguidas</span>` : "";
+    return `
+    <button class="card ${s.id === selectedId ? "selected" : ""}" data-id="${escapeHtml(s.id)}" type="button">
       <div class="card-media">${shirtMedia(s)}</div>
       <div class="card-name" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</div>
-      <div class="card-meta">${counts[s.id]} ${counts[s.id] === 1 ? "dia" : "dias"}</div>
-      <span class="card-del" data-del="${s.id}" role="button" aria-label="Remover camisa" title="Remover">✕</span>
-    </button>`).join("");
+      <div class="card-meta">${counts[s.id]} ${counts[s.id] === 1 ? "dia" : "dias"}${fire}</div>
+      <span class="card-del" data-del="${escapeHtml(s.id)}" role="button" aria-label="Remover camisa" title="Remover">✕</span>
+    </button>`;
+  }).join("");
 
   const absentCard = `
     <button class="card card-absent ${selectedId === ABSENT ? "selected" : ""}" data-id="${ABSENT}" type="button">
@@ -381,6 +461,7 @@ function renderRanking() {
     </div>`;
 
   const max = counts[leader.id];
+  const { bestByShirt } = computeStreaks();
   const listHtml = ranked.map((s, i) => {
     const c = counts[s.id];
     const zero = c === 0;
@@ -394,7 +475,7 @@ function renderRanking() {
             <span class="rk-count">${zero ? "sem uso" : `${daysLabel(c)} · ${pct(c)}%`}</span>
           </div>
           <div class="bar"><div style="width:${(c / max) * 100}%;background:${color(i)}"></div></div>
-          ${zero ? "" : `<span class="rk-last">última vez em ${shortDate(lastUsed[s.id])}</span>`}
+          ${zero ? "" : `<span class="rk-last">última vez em ${shortDate(lastUsed[s.id])}${(bestByShirt[s.id] ?? 0) >= 2 ? ` · recorde 🔥 ${bestByShirt[s.id]}` : ""}</span>`}
         </div>
       </li>`;
   }).join("");
@@ -452,6 +533,7 @@ function fillMonthSelect() {
 }
 
 function selectDay(day) {
+  if (!DAY_RE.test(day) || day < CAL_START || day > CAL_END) day = defaultDay();
   selectedDay = day;
   viewMonth = monthKey(day);
   render();
@@ -471,6 +553,7 @@ function renderCalendar() {
   let html = "";
   for (let i = 0; i < first.getDay(); i++) html += `<span class="cal-cell cal-pad"></span>`;
 
+  const { byDay } = computeStreaks();
   let present = 0, absent = 0, pending = 0;
   for (let d = 1; d <= daysInMonth; d++) {
     const key = `${viewMonth}-${String(d).padStart(2, "0")}`;
@@ -492,15 +575,18 @@ function renderCalendar() {
 
     const media = id === ABSENT
       ? `<img src="${ABSENT_IMG}" alt="" />`
-      : shirt ? (shirt.img ? `<img src="${shirt.img}" alt="" />` : shirtSVG(shirt.color)) : "";
+      : shirt ? (shirt.img ? `<img src="${escapeHtml(shirt.img)}" alt="" />` : shirtSVG(shirt.color)) : "";
+    const run = shirt ? byDay[key] ?? 0 : 0;
     const label = formatDate(key, { weekday: "long", day: "2-digit", month: "long" }) +
-      (id === ABSENT ? " — faltou" : shirt ? ` — ${shirt.name}` : "");
+      (id === ABSENT ? " — faltou" : shirt ? ` — ${shirt.name}` : "") +
+      (run >= 2 ? ` — 🔥 ${run} seguidas` : "");
 
     html += `
       <button class="${cls.join(" ")}" data-day="${key}" type="button" ${future ? "disabled" : ""}
               title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">
         <span class="cal-num">${d}</span>
         ${media ? `<span class="cal-media">${media}</span>` : ""}
+        ${run >= 2 ? `<span class="cal-fire fire-${fireLevel(run)}">🔥${run}</span>` : ""}
       </button>`;
   }
   $("#calGrid").innerHTML = html;
@@ -513,15 +599,22 @@ function renderCalendar() {
 
 /* ---------------- Ações ---------------- */
 
+// Só dá para marcar dias do calendário que já chegaram
+const isMarkable = (day) => DAY_RE.test(day) && day >= CAL_START && day <= CAL_END && day <= todayKey();
+
 function markShirt(id) {
   const day = selectedDay;
+  if (!isMarkable(day) || (id !== ABSENT && !shirtById(id))) return;
   const when = formatDate(day, { day: "2-digit", month: "short" });
   if (state.log[day] === id) {
     delete state.log[day];
     toast(`Registro de ${when} removido`);
   } else {
     state.log[day] = id;
-    toast(id === ABSENT ? `💔 Falta registrada em ${when}` : `✔ ${shirtById(id).name} marcada em ${when}`);
+    const run = id === ABSENT ? 0 : computeStreaks().byDay[day] ?? 0;
+    toast(id === ABSENT ? `💔 Falta registrada em ${when}`
+      : run >= 2 ? `🔥 ${run} seguidas com ${shirtById(id).name}!`
+      : `✔ ${shirtById(id).name} marcada em ${when}`);
   }
   save();
   render();
@@ -529,6 +622,7 @@ function markShirt(id) {
 
 function deleteShirt(id) {
   const s = shirtById(id);
+  if (!s) return;
   const uses = getCounts()[id];
   const msg = uses
     ? `Remover "${s.name}"? Os ${uses} registro(s) dela também serão apagados.`
@@ -577,6 +671,7 @@ function resizeImage(file, max = 360) {
       const img = new Image();
       img.onerror = reject;
       img.onload = () => {
+        if (img.width * img.height > MAX_UPLOAD_PIXELS) { reject(new Error("imagem grande demais")); return; }
         const scale = Math.min(1, max / Math.max(img.width, img.height));
         const canvas = document.createElement("canvas");
         canvas.width = Math.round(img.width * scale);
@@ -596,6 +691,13 @@ function resizeImage(file, max = 360) {
 async function handlePhoto(e) {
   const file = e.target.files[0];
   if (!file) { pendingImg = null; updatePreview(); return; }
+  if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type) || file.size > MAX_UPLOAD_BYTES) {
+    e.target.value = "";
+    pendingImg = null;
+    updatePreview();
+    toast("Use uma foto JPG, PNG, WEBP ou GIF de até 10 MB");
+    return;
+  }
   try {
     pendingImg = await resizeImage(file);
   } catch {
@@ -607,9 +709,11 @@ async function handlePhoto(e) {
 
 function handleAddShirt(e) {
   e.preventDefault();
-  const name = $("#shirtName").value.trim();
+  const name = $("#shirtName").value.trim().slice(0, MAX_NAME);
   if (!name) return;
-  const shirt = { id: uid(), name, color: $("#shirtColor").value, img: pendingImg, createdAt: Date.now() };
+  if (state.shirts.length >= MAX_SHIRTS) { toast(`O armário aceita até ${MAX_SHIRTS} camisas`); return; }
+  const color = COLOR_RE.test($("#shirtColor").value) ? $("#shirtColor").value : "#64748b";
+  const shirt = { id: uid(), name, color, img: pendingImg, createdAt: Date.now() };
   state.shirts.push(shirt);
   if (!save()) { state.shirts.pop(); return; }
   closeModal();
@@ -653,6 +757,7 @@ $("#shirtGrid").addEventListener("click", (e) => {
 $("#history").addEventListener("click", (e) => {
   const btn = e.target.closest("[data-unmark]");
   if (!btn) return;
+  if (!Object.hasOwn(state.log, btn.dataset.unmark)) return;
   delete state.log[btn.dataset.unmark];
   save();
   render();
@@ -669,9 +774,10 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal
 
 /* ---------------- Init ---------------- */
 
-const sessionUser = localStorage.getItem(KEY_SESSION);
-if (sessionUser === AUTH_USER) {
+const sessionUser = validSession();
+if (sessionUser) {
   enterApp(sessionUser);
 } else {
+  localStorage.removeItem(KEY_SESSION);
   $("#auth").classList.remove("hidden");
 }

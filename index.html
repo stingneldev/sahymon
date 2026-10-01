@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- Só carrega scripts da própria página; imagens locais ou geradas pelo upload; fontes do Google -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'" />
+  <meta name="referrer" content="no-referrer" />
   <title>Esquilook</title>
   <link rel="icon" href="assets/favicon.ico" sizes="any" />
   <link rel="icon" href="assets/favicon-32.png" type="image/png" sizes="32x32" />
@@ -22,7 +25,7 @@
       </div>
       <p class="auth-sub">O diário de looks do esquilo: registre a camisa do dia e descubra a favorita.</p>
 
-      <form id="authForm" class="form" autocomplete="on">
+      <form id="authForm" class="form" method="post" autocomplete="on">
         <label class="field">
           <span>Usuário</span>
           <input id="authUser" type="text" required minlength="3" maxlength="24" autocomplete="username" placeholder="usuário" />
@@ -56,6 +59,7 @@
           <p class="eyebrow" id="todayLabel"></p>
           <h1>Qual camisa o <button id="friendName" class="friend-name" type="button" title="Clique para alterar o nome"></button> veio hoje?</h1>
           <p class="hero-sub" id="todayStatus"></p>
+          <p class="hero-streak hidden" id="heroStreak"></p>
         </div>
         <div class="hero-today" id="heroToday"></div>
       </section>
@@ -64,7 +68,7 @@
       <section class="stats">
         <div class="stat"><span class="stat-value" id="statDays">0</span><span class="stat-label">Dias com camisa</span></div>
         <div class="stat"><span class="stat-value stat-absent" id="statAbsent">0</span><span class="stat-label">Faltas</span></div>
-        <div class="stat"><span class="stat-value" id="statStreak">0</span><span class="stat-label">Vezes seguidas com a atual</span></div>
+        <div class="stat stat-streak" id="streakCard"><span class="stat-value" id="statStreak">0</span><span class="stat-label">Streak da camisa <span id="streakBest"></span></span></div>
         <div class="stat"><span class="stat-value stat-value-sm" id="statFav">—</span><span class="stat-label">Camisa favorita</span></div>
       </section>
 
@@ -149,7 +153,7 @@
           </label>
           <label class="field grow">
             <span>Foto (opcional)</span>
-            <input id="shirtPhoto" type="file" accept="image/*" />
+            <input id="shirtPhoto" type="file" accept="image/jpeg,image/png,image/webp,image/gif" />
           </label>
         </div>
         <div class="modal-actions">

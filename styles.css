@@ -296,6 +296,32 @@ button { cursor: pointer; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 .footer { text-align: center; color: var(--muted); font-size: .8rem; padding: 8px 20px 32px; }
 
+/* ---------- Streak 🔥 ---------- */
+.flame { display: inline-block; transform-origin: 50% 90%; }
+.flame-0 { filter: grayscale(1); opacity: .35; }
+.flame-1 { animation: flicker 1.4s ease-in-out infinite alternate; }
+.flame-2 { animation: flicker 1s ease-in-out infinite alternate; filter: drop-shadow(0 0 6px rgba(249, 115, 22, .6)); }
+.flame-3 { animation: flicker .7s ease-in-out infinite alternate; filter: drop-shadow(0 0 10px rgba(239, 68, 68, .8)); font-size: 1.15em; }
+@keyframes flicker {
+  from { transform: scale(1) rotate(-4deg); }
+  to { transform: scale(1.12) rotate(4deg); }
+}
+.stat-streak.on { background: linear-gradient(135deg, #fff7ed, #ffedd5); border-color: #fed7aa; }
+.stat-streak.on .stat-value { color: #c2410c; }
+.hero-streak {
+  display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; padding: 6px 14px; border-radius: 99px;
+  background: rgba(255, 255, 255, .18); border: 1px solid rgba(255, 255, 255, .3); font-size: .9rem;
+}
+.card-fire { color: #c2410c; font-weight: 700; white-space: nowrap; }
+.cal-fire {
+  position: absolute; right: 2px; bottom: 2px; z-index: 1; padding: 0 4px; border-radius: 99px;
+  font-size: .62rem; font-weight: 800; line-height: 15px; color: #c2410c; background: #fff7ed; border: 1px solid #fed7aa;
+}
+.cal-fire.fire-3 { color: #fff; background: #ea580c; border-color: #ea580c; }
+@media (prefers-reduced-motion: reduce) {
+  .flame { animation: none !important; }
+}
+
 @keyframes fade { from { opacity: 0; } }
 
 /* ---------- Responsive ---------- */
