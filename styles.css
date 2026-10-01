@@ -49,6 +49,8 @@ button { cursor: pointer; }
 .btn-ghost { background: transparent; border-color: var(--border); }
 .btn-ghost:hover { background: var(--surface-2); }
 .btn-sm { padding: 6px 12px; font-size: .875rem; }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-danger:hover { background: #b91c1c; }
 .btn-block { width: 100%; }
 .icon-btn {
   border: none; background: transparent; width: 32px; height: 32px; border-radius: 8px;
@@ -239,7 +241,14 @@ button { cursor: pointer; }
   transition: border-color .15s, transform .1s, box-shadow .15s;
 }
 .cal-day:not(:disabled):hover { border-color: var(--primary); transform: translateY(-1px); }
-.cal-weekend { background: var(--surface-2); }
+.cal-luto {
+  background: repeating-linear-gradient(135deg, #27272a 0 6px, #18181b 6px 12px);
+  border-color: #18181b; cursor: not-allowed;
+}
+.cal-luto .cal-num { color: #a1a1aa; }
+.cal-luto-icon { position: absolute; inset: 0; display: grid; place-items: center; color: #d4d4d8; }
+.cal-luto-icon svg { width: 46%; height: 46%; }
+.cal-luto.cal-future { opacity: .55; }
 .cal-future { opacity: .4; cursor: default; }
 .cal-num {
   position: absolute; top: 4px; left: 4px; z-index: 1; min-width: 20px; height: 20px; padding: 0 5px;
@@ -257,6 +266,51 @@ button { cursor: pointer; }
 .cal-absent.cal-selected { border-color: var(--danger); box-shadow: 0 0 0 3px #fee2e2, inset 0 0 0 1px var(--danger); }
 .cal-summary { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 14px; font-size: .82rem; color: var(--muted); }
 .cal-summary span { display: inline-flex; align-items: center; gap: 6px; }
+
+/* ---------- Aviso do dia ---------- */
+.day-notice {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px; margin-bottom: 14px;
+  border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2);
+}
+.day-notice > div:not(.notice-thumb) { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.day-notice strong { font-size: .95rem; }
+.day-notice span { font-size: .82rem; color: var(--muted); }
+.notice-icon { font-size: 1.4rem; flex-shrink: 0; }
+.notice-open { background: var(--primary-soft); border-color: #c7d2fe; }
+.notice-done { background: #ecfdf5; border-color: #a7f3d0; }
+.notice-done strong { color: #047857; }
+.notice-luto { background: #18181b; border-color: #18181b; color: #f4f4f5; }
+.notice-luto span { color: #a1a1aa; }
+.notice-thumb {
+  position: relative; flex-shrink: 0; width: 44px; height: 44px; border-radius: 10px; overflow: hidden;
+  background: #fff; border: 1px solid #a7f3d0; display: grid; place-items: center;
+}
+.notice-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 20%; }
+.notice-thumb.is-absent { background: #000; }
+.notice-thumb.is-absent img { object-fit: contain; }
+.notice-thumb .shirt-art { width: 80%; height: 80%; filter: none; }
+
+/* Armário travado: dia já registrado ou fim de semana */
+.grid.is-locked .card[data-id] { opacity: .45; cursor: not-allowed; }
+.grid.is-locked .card[data-id]:hover { transform: none; box-shadow: none; border-color: var(--border); }
+.grid.is-locked .card.selected { opacity: 1; }
+.grid.is-locked .card.selected:hover { border-color: var(--primary); box-shadow: 0 0 0 4px var(--primary-soft); }
+.grid.is-locked .card-absent.selected:hover { border-color: var(--danger); box-shadow: 0 0 0 4px #fee2e2; }
+
+/* ---------- Confirmação ---------- */
+.confirm-card { max-width: 380px; text-align: center; }
+.confirm-media {
+  position: relative; width: 140px; height: 175px; margin: 0 auto 14px; border-radius: 14px; overflow: hidden;
+  background: #fff; border: 1px solid var(--border); display: grid; place-items: center;
+}
+.confirm-media:has(img[src*="faltou"]) { background: #000; }
+.confirm-media img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; padding: 6px; }
+.confirm-media .shirt-art { width: 75%; height: 75%; }
+.confirm-card h3 { font-size: 1.15rem; margin-bottom: 6px; }
+.confirm-text { color: var(--muted); margin-bottom: 18px; }
+.confirm-text b { color: var(--text); }
+.confirm-card .modal-actions { justify-content: center; }
+.hero-luto { filter: grayscale(1) brightness(.8) drop-shadow(0 6px 12px rgba(0,0,0,.25)) !important; }
 
 /* ---------- Card de falta ---------- */
 .card-absent .card-media, .card-absent .card-media:has(img) { background: #000; }

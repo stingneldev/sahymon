@@ -101,8 +101,8 @@
               <h2>Armário</h2>
               <p class="muted">Marcando: <b class="marking-day" id="markingDay"></b></p>
             </div>
-            <button id="clearDay" class="btn btn-ghost btn-sm hidden" type="button">Limpar dia</button>
           </div>
+          <div class="day-notice" id="dayNotice" role="status" aria-live="polite"></div>
           <div class="grid" id="shirtGrid"></div>
         </section>
       </div>
@@ -161,6 +161,19 @@
           <button class="btn btn-primary" type="submit">Adicionar</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- ============ MODAL: confirmação ============ -->
+  <div id="confirmModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+    <div class="modal-card confirm-card">
+      <div class="confirm-media" id="confirmMedia"></div>
+      <h3 id="confirmTitle"></h3>
+      <p class="confirm-text" id="confirmText"></p>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" data-confirm="no" type="button">Cancelar</button>
+        <button class="btn btn-primary" data-confirm="yes" id="confirmOk" type="button">Confirmar</button>
+      </div>
     </div>
   </div>
 

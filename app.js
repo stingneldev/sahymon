@@ -73,6 +73,9 @@ function fromKey(key) {
   const [y, m, d] = key.split("-").map(Number);
   return new Date(y, m - 1, d);
 }
+// Sábado e domingo: sem aula, sem registro (luto no calendário)
+const isWeekend = (key) => [0, 6].includes(fromKey(key).getDay());
+
 function formatDate(key, opts = { weekday: "long", day: "2-digit", month: "long" }) {
   return fromKey(key).toLocaleDateString("pt-BR", opts);
 }
@@ -237,7 +240,7 @@ function sanitizeState(data) {
   const log = {};
   const rawLog = data.log && typeof data.log === "object" ? data.log : {};
   for (const [day, id] of Object.entries(rawLog)) {
-    if (DAY_RE.test(day) && (id === ABSENT || ids.has(id))) log[day] = id;
+    if (DAY_RE.test(day) && !isWeekend(day) && (id === ABSENT || ids.has(id))) log[day] = id;
   }
 
   const friend = typeof data.friend === "string" && data.friend.trim() ? data.friend.trim().slice(0, 24) : "Sahymon";
@@ -339,11 +342,14 @@ function renderHero() {
   $("#friendName").textContent = state.friend;
   $("#todayLabel").textContent = formatDate(todayKey(), { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
   const shirt = shirtById(state.log[todayKey()]);
-  if (state.log[todayKey()] === ABSENT) {
-    $("#todayStatus").innerHTML = `Hoje ele <b>faltou à aula</b> 💔`;
+  if (isWeekend(todayKey())) {
+    $("#todayStatus").innerHTML = `Fim de semana: dia de <b>luto</b> 🖤 Sem aula, sem camisa.`;
+    $("#heroToday").innerHTML = `<img class="hero-logo hero-luto" src="assets/logo.webp" alt="" />`;
+  } else if (state.log[todayKey()] === ABSENT) {
+    $("#todayStatus").innerHTML = `Hoje ele <b>faltou à aula</b> 💔 Aguardando o próximo dia.`;
     $("#heroToday").innerHTML = `<img src="${ABSENT_IMG}" alt="Faltou à aula" />`;
   } else if (shirt) {
-    $("#todayStatus").innerHTML = `Hoje foi de <b>${escapeHtml(shirt.name)}</b>. Clique em outra camisa para trocar.`;
+    $("#todayStatus").innerHTML = `Hoje foi de <b>${escapeHtml(shirt.name)}</b>. Aguardando o próximo dia.`;
     $("#heroToday").innerHTML = shirtMedia(shirt);
   } else {
     $("#todayStatus").textContent = "Ainda não marcado hoje. Escolha a camisa no armário.";
@@ -382,13 +388,16 @@ function renderGrid() {
   const selectedId = state.log[selectedDay];
   const absences = countAbsences();
   $("#markingDay").textContent = formatDate(selectedDay, { weekday: "long", day: "2-digit", month: "long" });
-  $("#clearDay").classList.toggle("hidden", !selectedId);
+  const weekend = isWeekend(selectedDay);
+  const locked = weekend || Boolean(selectedId);
+  $("#shirtGrid").classList.toggle("is-locked", locked);
+  renderDayNotice(selectedId, weekend);
   const { current } = computeStreaks();
   const cards = state.shirts.map((s) => {
     const fire = current.id === s.id && current.count >= 2
       ? ` · <span class="card-fire">${flame(current.count)}${current.count} seguidas</span>` : "";
     return `
-    <button class="card ${s.id === selectedId ? "selected" : ""}" data-id="${escapeHtml(s.id)}" type="button">
+    <button class="card ${s.id === selectedId ? "selected" : ""}" data-id="${escapeHtml(s.id)}" type="button" aria-disabled="${locked}">
       <div class="card-media">${shirtMedia(s)}</div>
       <div class="card-name" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</div>
       <div class="card-meta">${counts[s.id]} ${counts[s.id] === 1 ? "dia" : "dias"}${fire}</div>
@@ -397,7 +406,7 @@ function renderGrid() {
   }).join("");
 
   const absentCard = `
-    <button class="card card-absent ${selectedId === ABSENT ? "selected" : ""}" data-id="${ABSENT}" type="button">
+    <button class="card card-absent ${selectedId === ABSENT ? "selected" : ""}" data-id="${ABSENT}" type="button" aria-disabled="${locked}">
       <div class="card-media"><img src="${ABSENT_IMG}" alt="Faltou à aula" /></div>
       <div class="card-name">Faltou à aula</div>
       <div class="card-meta">${absences} ${absences === 1 ? "falta" : "faltas"}</div>
@@ -409,6 +418,35 @@ function renderGrid() {
       <span>Nova camisa</span>
     </button>`;
 }
+
+// Faixa acima do armário: dia de luto, dia já registrado ou instrução
+function renderDayNotice(selectedId, weekend) {
+  const el = $("#dayNotice");
+  el.className = "day-notice";
+  if (weekend) {
+    el.classList.add("notice-luto");
+    el.innerHTML = `<span class="notice-icon">🖤</span>
+      <div><strong>Fim de semana — luto.</strong><span>Não há registro aos sábados e domingos.</span></div>`;
+    return;
+  }
+  if (selectedId) {
+    const absent = selectedId === ABSENT;
+    const shirt = shirtById(selectedId);
+    el.classList.add("notice-done");
+    el.innerHTML = `
+      <div class="notice-thumb ${absent ? "is-absent" : ""}">${absent ? `<img src="${ABSENT_IMG}" alt="" />` : shirtMedia(shirt)}</div>
+      <div><strong>Aguardando o próximo dia.</strong>
+        <span>Registrado: ${absent ? "faltou à aula" : escapeHtml(shirt.name)}</span></div>
+      <button class="btn btn-ghost btn-sm" id="fixDay" type="button">Corrigir registro</button>`;
+    return;
+  }
+  el.classList.add("notice-open");
+  el.innerHTML = `<span class="notice-icon">👆</span>
+    <div><strong>Escolha a camisa do dia.</strong><span>Você vai confirmar antes de registrar.</span></div>`;
+}
+
+// Laço de luto (desenhado em SVG para aparecer bem sobre o fundo escuro)
+const LUTO_RIBBON = `<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2.5c-2.3 0-4.1 1.8-4.1 4.1 0 1.7.8 3.3 2 4.9L4.8 20.5h3.4l3.8-6.2 3.8 6.2h3.4l-5.1-9c1.2-1.6 2-3.2 2-4.9 0-2.3-1.8-4.1-4.1-4.1zm0 2.1c1.1 0 2 .9 2 2 0 1-.6 2.3-2 4-1.4-1.7-2-3-2-4 0-1.1.9-2 2-2z"/></svg>`;
 
 const RANK_COLORS = ["#4f46e5", "#a855f7", "#ec4899", "#f59e0b", "#10b981", "#0ea5e9"];
 
@@ -560,14 +598,14 @@ function renderCalendar() {
     const id = state.log[key];
     const shirt = shirtById(id);
     const future = key > today;
-    const weekend = [0, 6].includes(fromKey(key).getDay());
+    const weekend = isWeekend(key);
     if (id === ABSENT) absent++;
     else if (shirt) present++;
     else if (!future && !weekend) pending++;
 
     const cls = ["cal-cell", "cal-day"];
     if (future) cls.push("cal-future");
-    if (weekend) cls.push("cal-weekend");
+    if (weekend) cls.push("cal-luto");
     if (key === today) cls.push("cal-today");
     if (key === selectedDay) cls.push("cal-selected");
     if (id === ABSENT) cls.push("cal-absent");
@@ -578,13 +616,15 @@ function renderCalendar() {
       : shirt ? (shirt.img ? `<img src="${escapeHtml(shirt.img)}" alt="" />` : shirtSVG(shirt.color)) : "";
     const run = shirt ? byDay[key] ?? 0 : 0;
     const label = formatDate(key, { weekday: "long", day: "2-digit", month: "long" }) +
+      (weekend ? " — luto (fim de semana)" : "") +
       (id === ABSENT ? " — faltou" : shirt ? ` — ${shirt.name}` : "") +
       (run >= 2 ? ` — 🔥 ${run} seguidas` : "");
 
     html += `
-      <button class="${cls.join(" ")}" data-day="${key}" type="button" ${future ? "disabled" : ""}
+      <button class="${cls.join(" ")}" data-day="${key}" type="button" ${future || weekend ? "disabled" : ""}
               title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">
         <span class="cal-num">${d}</span>
+        ${weekend ? `<span class="cal-luto-icon" aria-hidden="true">${LUTO_RIBBON}</span>` : ""}
         ${media ? `<span class="cal-media">${media}</span>` : ""}
         ${run >= 2 ? `<span class="cal-fire fire-${fireLevel(run)}">🔥${run}</span>` : ""}
       </button>`;
@@ -594,30 +634,80 @@ function renderCalendar() {
   $("#calSummary").innerHTML = `
     <span><i class="dot" style="background:var(--primary)"></i>${present} com camisa</span>
     <span><i class="dot" style="background:var(--danger)"></i>${absent} ${absent === 1 ? "falta" : "faltas"}</span>
-    <span><i class="dot" style="background:var(--border)"></i>${pending} sem registro (dias úteis)</span>`;
+    <span><i class="dot" style="background:var(--border)"></i>${pending} sem registro (dias úteis)</span>
+    <span>🖤 fins de semana: luto</span>`;
 }
 
 /* ---------------- Ações ---------------- */
 
-// Só dá para marcar dias do calendário que já chegaram
-const isMarkable = (day) => DAY_RE.test(day) && day >= CAL_START && day <= CAL_END && day <= todayKey();
+// Só dá para marcar dias úteis do calendário que já chegaram
+const isMarkable = (day) =>
+  DAY_RE.test(day) && day >= CAL_START && day <= CAL_END && day <= todayKey() && !isWeekend(day);
 
-function markShirt(id) {
+/* ---------------- Confirmação ---------------- */
+
+let confirmResolve = null;
+
+function askConfirm({ title, html, media = "", ok = "Confirmar", danger = false }) {
+  $("#confirmTitle").textContent = title;
+  $("#confirmText").innerHTML = html;
+  $("#confirmMedia").innerHTML = media;
+  $("#confirmMedia").classList.toggle("hidden", !media);
+  $("#confirmOk").textContent = ok;
+  $("#confirmOk").className = `btn ${danger ? "btn-danger" : "btn-primary"}`;
+  $("#confirmModal").classList.remove("hidden");
+  setTimeout(() => $("#confirmOk").focus(), 50);
+  return new Promise((resolve) => { confirmResolve = resolve; });
+}
+
+function closeConfirm(result) {
+  if (!confirmResolve) return;
+  $("#confirmModal").classList.add("hidden");
+  confirmResolve(result);
+  confirmResolve = null;
+}
+
+async function markShirt(id) {
   const day = selectedDay;
-  if (!isMarkable(day) || (id !== ABSENT && !shirtById(id))) return;
-  const when = formatDate(day, { day: "2-digit", month: "short" });
-  if (state.log[day] === id) {
-    delete state.log[day];
-    toast(`Registro de ${when} removido`);
-  } else {
-    state.log[day] = id;
-    const run = id === ABSENT ? 0 : computeStreaks().byDay[day] ?? 0;
-    toast(id === ABSENT ? `💔 Falta registrada em ${when}`
-      : run >= 2 ? `🔥 ${run} seguidas com ${shirtById(id).name}!`
-      : `✔ ${shirtById(id).name} marcada em ${when}`);
-  }
+  if (!isMarkable(day) || state.log[day] || (id !== ABSENT && !shirtById(id))) return;
+  const absent = id === ABSENT;
+  const shirt = shirtById(id);
+  const longDay = formatDate(day, { weekday: "long", day: "2-digit", month: "long" });
+
+  const ok = await askConfirm({
+    title: absent ? "Registrar falta?" : "Registrar camisa do dia?",
+    html: absent
+      ? `Confirma que ele <b>faltou à aula</b> em <b>${longDay}</b>?`
+      : `Confirma <b>${escapeHtml(shirt.name)}</b> em <b>${longDay}</b>?`,
+    media: absent ? `<img src="${ABSENT_IMG}" alt="" />` : shirtMedia(shirt),
+    ok: absent ? "Registrar falta" : "Registrar",
+    danger: absent,
+  });
+  // Confere de novo: o dia pode ter mudado enquanto a janela estava aberta
+  if (!ok || day !== selectedDay || state.log[day] || !isMarkable(day)) return;
+
+  state.log[day] = id;
+  if (!save()) { delete state.log[day]; return; }
+  render();
+  const run = absent ? 0 : computeStreaks().byDay[day] ?? 0;
+  toast(run >= 2 ? `🔥 ${run} seguidas! Aguardando o próximo dia.` : "Registrado! Aguardando o próximo dia.");
+}
+
+async function unmarkDay(day) {
+  if (!Object.hasOwn(state.log, day)) return;
+  const id = state.log[day];
+  const name = id === ABSENT ? "a falta" : `"${escapeHtml(shirtById(id)?.name ?? "")}"`;
+  const ok = await askConfirm({
+    title: "Corrigir registro?",
+    html: `Isso apaga ${name} de <b>${formatDate(day, { weekday: "long", day: "2-digit", month: "long" })}</b> para você registrar de novo.`,
+    ok: "Apagar registro",
+    danger: true,
+  });
+  if (!ok || !Object.hasOwn(state.log, day)) return;
+  delete state.log[day];
   save();
   render();
+  toast("Registro apagado");
 }
 
 function deleteShirt(id) {
@@ -739,11 +829,12 @@ $("#calGrid").addEventListener("click", (e) => {
     $("#shirtGrid").closest(".panel").scrollIntoView({ behavior: "smooth", block: "start" });
   }
 });
-$("#clearDay").addEventListener("click", () => {
-  delete state.log[selectedDay];
-  save();
-  render();
-  toast("Registro do dia removido");
+$("#dayNotice").addEventListener("click", (e) => {
+  if (e.target.closest("#fixDay")) unmarkDay(selectedDay);
+});
+$("#confirmModal").addEventListener("click", (e) => {
+  if (e.target === e.currentTarget || e.target.closest('[data-confirm="no"]')) closeConfirm(false);
+  else if (e.target.closest('[data-confirm="yes"]')) closeConfirm(true);
 });
 
 $("#shirtGrid").addEventListener("click", (e) => {
@@ -751,17 +842,17 @@ $("#shirtGrid").addEventListener("click", (e) => {
   if (del) { e.stopPropagation(); deleteShirt(del.dataset.del); return; }
   if (e.target.closest("#addCard")) { openModal(); return; }
   const card = e.target.closest(".card[data-id]");
-  if (card) markShirt(card.dataset.id);
+  if (!card) return;
+  if (card.getAttribute("aria-disabled") === "true") {
+    toast(isWeekend(selectedDay) ? "Fim de semana é luto 🖤 Sem registro." : "Dia já registrado. Aguardando o próximo dia.");
+    return;
+  }
+  markShirt(card.dataset.id);
 });
 
 $("#history").addEventListener("click", (e) => {
   const btn = e.target.closest("[data-unmark]");
-  if (!btn) return;
-  if (!Object.hasOwn(state.log, btn.dataset.unmark)) return;
-  delete state.log[btn.dataset.unmark];
-  save();
-  render();
-  toast("Registro removido");
+  if (btn) unmarkDay(btn.dataset.unmark);
 });
 
 $("#shirtColor").addEventListener("input", () => { if (!pendingImg) updatePreview(); });
@@ -770,7 +861,11 @@ $("#shirtForm").addEventListener("submit", handleAddShirt);
 $("#modal").addEventListener("click", (e) => {
   if (e.target === e.currentTarget || e.target.closest("[data-close]")) closeModal();
 });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  closeModal();
+  closeConfirm(false);
+});
 
 /* ---------------- Init ---------------- */
 
