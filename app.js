@@ -3,8 +3,12 @@
    Tudo é salvo no localStorage do navegador.
    ========================================================= */
 
-const KEY_USERS = "camisometro:users";
 const KEY_SESSION = "camisometro:session";
+
+// Login único. A senha não fica em texto puro: guardamos só o SHA-256 de "sal:senha".
+const AUTH_USER = "sahymon";
+const AUTH_SALT = "camisometro";
+const AUTH_HASH = "086f1777dc760c51bc70d9baceb4c9ed8beb81ccc7088b885ae8b31ebfda03e1";
 const dataKey = (user) => `camisometro:data:${user}`;
 
 const DEFAULT_SHIRTS = [
@@ -20,7 +24,6 @@ const $ = (sel) => document.querySelector(sel);
 
 let currentUser = null;
 let state = null;
-let authMode = "login";
 
 /* ---------------- Utils ---------------- */
 
@@ -73,15 +76,50 @@ function toast(msg) {
 }
 
 async function hashPassword(password, salt) {
-  const text = `${salt}:${password}`;
+  const bytes = new TextEncoder().encode(`${salt}:${password}`);
   if (window.crypto?.subtle) {
-    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+    const buf = await crypto.subtle.digest("SHA-256", bytes);
     return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
   }
-  // Fallback simples (contextos sem crypto.subtle)
-  let h = 5381;
-  for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
-  return "f" + (h >>> 0).toString(16);
+  return sha256(bytes); // contextos sem crypto.subtle (ex.: http por IP na rede local)
+}
+
+// SHA-256 em JS puro, usado só como fallback
+function sha256(bytes) {
+  const K = [];
+  const H = [];
+  const isPrime = (n) => { for (let i = 2; i * i <= n; i++) if (n % i === 0) return false; return true; };
+  const frac = (x) => ((x - Math.floor(x)) * 2 ** 32) >>> 0;
+  for (let n = 2, i = 0; i < 64; n++) {
+    if (!isPrime(n)) continue;
+    if (i < 8) H[i] = frac(n ** (1 / 2));
+    K[i++] = frac(n ** (1 / 3));
+  }
+  const len = bytes.length;
+  const padded = new Uint8Array(((len + 9 + 63) >> 6) << 6);
+  padded.set(bytes);
+  padded[len] = 0x80;
+  const view = new DataView(padded.buffer);
+  view.setUint32(padded.length - 4, len * 8);
+  view.setUint32(padded.length - 8, Math.floor(len / 2 ** 29));
+  const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+  const W = new Uint32Array(64);
+  for (let off = 0; off < padded.length; off += 64) {
+    for (let t = 0; t < 16; t++) W[t] = view.getUint32(off + t * 4);
+    for (let t = 16; t < 64; t++) {
+      const s0 = rotr(W[t - 15], 7) ^ rotr(W[t - 15], 18) ^ (W[t - 15] >>> 3);
+      const s1 = rotr(W[t - 2], 17) ^ rotr(W[t - 2], 19) ^ (W[t - 2] >>> 10);
+      W[t] = (W[t - 16] + s0 + W[t - 7] + s1) >>> 0;
+    }
+    let [a, b, c, d, e, f, g, h] = H;
+    for (let t = 0; t < 64; t++) {
+      const t1 = (h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[t] + W[t]) >>> 0;
+      const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
+      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+    }
+    [a, b, c, d, e, f, g, h].forEach((v, i) => (H[i] = (H[i] + v) >>> 0));
+  }
+  return H.map((v) => v.toString(16).padStart(8, "0")).join("");
 }
 
 /* ---------------- Visual da camisa ---------------- */
@@ -108,40 +146,17 @@ function shirtMedia(shirt) {
 
 /* ---------------- Auth ---------------- */
 
-function setAuthMode(mode) {
-  authMode = mode;
-  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === mode));
-  $("#authSubmit").textContent = mode === "login" ? "Entrar" : "Criar conta";
-  $("#authPass").autocomplete = mode === "login" ? "current-password" : "new-password";
-  $("#authError").textContent = "";
-}
-
 async function handleAuth(e) {
   e.preventDefault();
   const user = $("#authUser").value.trim().toLowerCase();
   const pass = $("#authPass").value;
-  const err = $("#authError");
-  const users = readJSON(KEY_USERS, {});
 
-  if (!/^[a-z0-9._-]{3,24}$/.test(user)) {
-    err.textContent = "Usuário deve ter 3–24 caracteres (letras, números, . _ -).";
+  if (user !== AUTH_USER || (await hashPassword(pass, AUTH_SALT)) !== AUTH_HASH) {
+    $("#authError").textContent = "Usuário ou senha inválidos.";
     return;
   }
 
-  if (authMode === "register") {
-    if (users[user]) { err.textContent = "Esse usuário já existe."; return; }
-    const salt = uid();
-    users[user] = { salt, hash: await hashPassword(pass, salt), createdAt: Date.now() };
-    writeJSON(KEY_USERS, users);
-    toast("Conta criada! Bem-vindo 👋");
-  } else {
-    const rec = users[user];
-    if (!rec || (await hashPassword(pass, rec.salt)) !== rec.hash) {
-      err.textContent = "Usuário ou senha inválidos.";
-      return;
-    }
-  }
-
+  $("#authError").textContent = "";
   localStorage.setItem(KEY_SESSION, user);
   $("#authForm").reset();
   enterApp(user);
@@ -153,7 +168,6 @@ function logout() {
   state = null;
   $("#app").classList.add("hidden");
   $("#auth").classList.remove("hidden");
-  setAuthMode("login");
 }
 
 /* ---------------- Estado ---------------- */
@@ -422,7 +436,6 @@ function handleAddShirt(e) {
 
 /* ---------------- Eventos ---------------- */
 
-document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => setAuthMode(t.dataset.tab)));
 $("#authForm").addEventListener("submit", handleAuth);
 $("#logoutBtn").addEventListener("click", logout);
 $("#friendName").addEventListener("click", renameFriend);
@@ -456,7 +469,7 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal
 /* ---------------- Init ---------------- */
 
 const sessionUser = localStorage.getItem(KEY_SESSION);
-if (sessionUser && readJSON(KEY_USERS, {})[sessionUser]) {
+if (sessionUser === AUTH_USER) {
   enterApp(sessionUser);
 } else {
   $("#auth").classList.remove("hidden");

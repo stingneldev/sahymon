@@ -86,9 +86,6 @@ button { cursor: pointer; }
   border-radius: 20px; padding: 36px 32px; box-shadow: var(--shadow);
 }
 .auth-sub { text-align: center; color: var(--muted); margin: 12px 0 24px; font-size: .95rem; }
-.tabs { display: grid; grid-template-columns: 1fr 1fr; background: var(--surface-2); padding: 4px; border-radius: 12px; margin-bottom: 20px; }
-.tab { border: none; background: transparent; padding: 8px; border-radius: 9px; font-weight: 600; color: var(--muted); }
-.tab.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(15,23,42,.08); }
 
 /* ---------- Topbar ---------- */
 .topbar { position: sticky; top: 0; z-index: 10; background: rgba(255,255,255,.85); backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); }
