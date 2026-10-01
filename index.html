@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Camisômetro</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- ============ LOGIN ============ -->
+  <section id="auth" class="auth hidden">
+    <div class="auth-card">
+      <div class="brand brand-lg">
+        <span class="brand-mark">👕</span>
+        <span>Camisômetro</span>
+      </div>
+      <p class="auth-sub">Registre a camisa do dia do seu amigo e descubra qual é a favorita dele.</p>
+
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-tab="login" type="button">Entrar</button>
+        <button class="tab" data-tab="register" type="button">Criar conta</button>
+      </div>
+
+      <form id="authForm" class="form" autocomplete="on">
+        <label class="field">
+          <span>Usuário</span>
+          <input id="authUser" type="text" required minlength="3" maxlength="24" autocomplete="username" placeholder="seu.usuario" />
+        </label>
+        <label class="field">
+          <span>Senha</span>
+          <input id="authPass" type="password" required minlength="4" autocomplete="current-password" placeholder="••••••" />
+        </label>
+        <p id="authError" class="form-error"></p>
+        <button id="authSubmit" class="btn btn-primary btn-block" type="submit">Entrar</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- ============ APP ============ -->
+  <div id="app" class="hidden">
+    <header class="topbar">
+      <div class="container topbar-inner">
+        <div class="brand"><span class="brand-mark">👕</span><span>Camisômetro</span></div>
+        <div class="topbar-right">
+          <span class="user-chip" id="userChip"></span>
+          <button id="logoutBtn" class="btn btn-ghost btn-sm" type="button">Sair</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="container">
+      <!-- Hero -->
+      <section class="hero">
+        <div>
+          <p class="eyebrow" id="todayLabel"></p>
+          <h1>Qual camisa o <button id="friendName" class="friend-name" type="button" title="Clique para alterar o nome"></button> veio hoje?</h1>
+          <p class="hero-sub" id="todayStatus"></p>
+        </div>
+        <div class="hero-today" id="heroToday"></div>
+      </section>
+
+      <!-- Stats -->
+      <section class="stats">
+        <div class="stat"><span class="stat-value" id="statDays">0</span><span class="stat-label">Dias registrados</span></div>
+        <div class="stat"><span class="stat-value" id="statShirts">0</span><span class="stat-label">Camisas no armário</span></div>
+        <div class="stat"><span class="stat-value" id="statStreak">0</span><span class="stat-label">Vezes seguidas com a atual</span></div>
+        <div class="stat"><span class="stat-value stat-value-sm" id="statFav">—</span><span class="stat-label">Camisa favorita</span></div>
+      </section>
+
+      <div class="layout">
+        <!-- Shirts -->
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Armário</h2>
+              <p class="muted">Clique em uma camisa para marcar no dia selecionado.</p>
+            </div>
+            <label class="date-pick">
+              <span>Dia</span>
+              <input type="date" id="dayInput" />
+            </label>
+          </div>
+          <div class="grid" id="shirtGrid"></div>
+        </section>
+
+        <!-- Ranking -->
+        <aside class="panel">
+          <div class="panel-head"><h2>🏆 Ranking</h2></div>
+          <ol class="ranking" id="ranking"></ol>
+        </aside>
+      </div>
+
+      <!-- History -->
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Histórico</h2>
+          <span class="muted" id="historyCount"></span>
+        </div>
+        <ul class="history" id="history"></ul>
+      </section>
+    </main>
+
+    <footer class="footer container">Feito só por diversão · os dados ficam salvos neste navegador</footer>
+  </div>
+
+  <!-- ============ MODAL: nova camisa ============ -->
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="modalTitle">Nova camisa</h3>
+        <button class="icon-btn" data-close type="button" aria-label="Fechar">✕</button>
+      </div>
+      <form id="shirtForm" class="form">
+        <div class="preview" id="shirtPreview"></div>
+        <label class="field">
+          <span>Nome da camisa</span>
+          <input id="shirtName" type="text" required maxlength="32" placeholder="Ex.: Polo azul marinho" />
+        </label>
+        <div class="row">
+          <label class="field">
+            <span>Cor</span>
+            <input id="shirtColor" type="color" value="#2563eb" />
+          </label>
+          <label class="field grow">
+            <span>Foto (opcional)</span>
+            <input id="shirtPhoto" type="file" accept="image/*" />
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" data-close type="button">Cancelar</button>
+          <button class="btn btn-primary" type="submit">Adicionar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
