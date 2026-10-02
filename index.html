@@ -99,6 +99,32 @@
         <div class="stat"><span class="stat-value stat-value-sm" id="statFav">—</span><span class="stat-label">Camisa favorita</span></div>
       </section>
 
+      <!-- Bolão do lanche (bolao.js) — some sozinho se o banco ainda não tiver as tabelas -->
+      <section class="panel bolao hidden" id="bolao">
+        <div class="panel-head">
+          <div>
+            <h2>🎯 Bolão do lanche</h2>
+            <p class="muted">R$ 1 por palpite, até as 11:00. Quem acerta descansa no dia seguinte. O caixa paga o lanche e a sobra do mês vai para quem fizer mais pontos.</p>
+          </div>
+        </div>
+        <div class="bolao-layout">
+          <div class="bolao-guess" id="bolaoGuess"></div>
+          <div class="bolao-month">
+            <div class="bolao-month-nav">
+              <button id="bolaoPrev" class="icon-btn" type="button" aria-label="Mês anterior">‹</button>
+              <strong id="bolaoMonthLabel"></strong>
+              <button id="bolaoNext" class="icon-btn" type="button" aria-label="Próximo mês">›</button>
+            </div>
+            <div id="bolaoMonth"></div>
+          </div>
+        </div>
+        <div class="bolao-rank" id="bolaoRank"></div>
+        <details class="bolao-admin" id="bolaoAdminBox">
+          <summary>⚙️ Participantes e caixa</summary>
+          <div id="bolaoAdmin"></div>
+        </details>
+      </section>
+
       <div class="layout layout-cal">
         <!-- Calendário -->
         <section class="panel">
@@ -219,6 +245,7 @@
 
   <script src="config.js"></script>
   <script src="api.js"></script>
+  <script src="bolao.js"></script>
   <script src="app.js"></script>
   <script src="assets/vendor/anime.umd.min.js"></script>
   <script src="login-anim.js"></script>

@@ -209,7 +209,8 @@ function sanitizeState(data) {
 
 // Busca tudo do servidor e redesenha (mantém o dia e o mês que estão abertos)
 async function reload() {
-  state = toState(await api.fetchAll());
+  const [data] = await Promise.all([api.fetchAll(), loadBolao()]);
+  state = toState(data);
   if (selectedDay) render();
 }
 
@@ -241,7 +242,7 @@ async function syncNow() {
   if (!state || busy || document.hidden || document.body.classList.contains("modal-open")) return;
   try {
     // Leve: registros + lista de ids. As fotos só são baixadas de novo se o armário mudou.
-    const light = await api.fetchLight();
+    const [light] = await Promise.all([api.fetchLight(), loadBolao()]);
     const known = state.shirts.map((x) => x.id).sort().join(",");
     if (light.shirtIds.slice().sort().join(",") !== known) {
       await reload();
@@ -366,6 +367,7 @@ const shirtById = (id) => state.shirts.find((s) => s.id === id);
 function render() {
   renderHero();
   renderStats();
+  renderBolao();
   renderCalendar();
   renderGrid();
   renderRanking();
@@ -674,9 +676,11 @@ function renderCalendar() {
 
 /* ---------------- Ações ---------------- */
 
-// Só dá para marcar dias úteis do calendário que já chegaram
+// Só dá para marcar dias úteis do calendário que já chegaram (e fora de meses encerrados no bolão)
 const isMarkable = (day) =>
-  DAY_RE.test(day) && day >= CAL_START && day <= CAL_END && day <= todayKey() && !isWeekend(day);
+  DAY_RE.test(day) && day >= CAL_START && day <= CAL_END && day <= todayKey() && !isWeekend(day) && !isDayLocked(day);
+
+const LOCKED_MSG = "Mês encerrado no bolão: os registros ficam travados.";
 
 /* ---------------- Confirmação ---------------- */
 
@@ -705,6 +709,7 @@ function closeConfirm(result) {
 
 async function markShirt(id) {
   const day = selectedDay;
+  if (isDayLocked(day)) { toast(LOCKED_MSG); return; }
   if (!isMarkable(day) || state.log[day] || (id !== ABSENT && !shirtById(id))) return;
   const absent = id === ABSENT;
   const shirt = shirtById(id);
@@ -744,6 +749,7 @@ async function markShirt(id) {
 
 async function unmarkDay(day) {
   if (!Object.hasOwn(state.log, day)) return;
+  if (isDayLocked(day)) { toast(LOCKED_MSG); return; }
   const id = state.log[day];
   const name = id === ABSENT ? "a falta" : `"${escapeHtml(shirtById(id)?.name ?? "")}"`;
   const ok = await askConfirm({
@@ -755,7 +761,12 @@ async function unmarkDay(day) {
   if (!ok || busy || !Object.hasOwn(state.log, day)) return;
   busy = true;
   try {
-    await api.deleteEntry(day);
+    const deleted = await api.deleteEntry(day);
+    if (Array.isArray(deleted) && !deleted.length) { // o banco recusou (mês encerrado)
+      toast(LOCKED_MSG);
+      await reload().catch(() => {});
+      return;
+    }
   } catch (ex) {
     handleApiError(ex);
     return;
@@ -783,9 +794,14 @@ async function deleteShirt(id) {
   if (!ok || busy || !shirtById(id)) return;
   busy = true;
   try {
-    await api.deleteShirt(id); // os registros dela saem junto (on delete cascade)
+    const deleted = await api.deleteShirt(id); // os registros dela saem junto (on delete cascade)
+    if (Array.isArray(deleted) && !deleted.length) {
+      toast("Essa camisa foi usada num mês encerrado do bolão e não pode sair.");
+      return;
+    }
   } catch (ex) {
-    handleApiError(ex);
+    if (ex.code === "23503") toast("Essa camisa tem palpites no bolão e não pode sair do armário.");
+    else handleApiError(ex);
     return;
   } finally {
     busy = false;

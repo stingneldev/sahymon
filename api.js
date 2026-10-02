@@ -179,16 +179,18 @@ const api = {
     return this.request("/rest/v1/entries", { method: "POST", body: row, prefer: "return=minimal" });
   },
 
+  // return=representation: num mês encerrado do bolão o banco não apaga e volta vazio
   deleteEntry(day) {
-    return this.request(`/rest/v1/entries?day=eq.${encodeURIComponent(day)}`, { method: "DELETE", prefer: "return=minimal" });
+    return this.request(`/rest/v1/entries?day=eq.${encodeURIComponent(day)}`, { method: "DELETE", prefer: "return=representation" });
   },
 
   addShirt(shirt) {
     return this.request("/rest/v1/shirts", { method: "POST", body: shirt, prefer: "return=minimal" });
   },
 
+  // return=representation: se o banco recusar (camisa de mês encerrado), volta vazio
   deleteShirt(id) {
-    return this.request(`/rest/v1/shirts?id=eq.${encodeURIComponent(id)}`, { method: "DELETE", prefer: "return=minimal" });
+    return this.request(`/rest/v1/shirts?id=eq.${encodeURIComponent(id)}&select=id`, { method: "DELETE", prefer: "return=representation" });
   },
 
   setSetting(key, value) {
@@ -196,6 +198,65 @@ const api = {
       method: "POST",
       body: { key, value },
       prefer: "resolution=merge-duplicates,return=minimal",
+    });
+  },
+
+  /* ---------- Bolão do lanche ---------- */
+
+  async fetchBolao() {
+    const [participants, guesses, payments, expenses, closures, config] = await Promise.all([
+      this.request("/rest/v1/bolao_participants?select=id,name,emoji,color,active,created_at&order=created_at.asc"),
+      this.request("/rest/v1/rpc/bolao_guess_list"),
+      this.request("/rest/v1/bolao_payments?select=id,participant_id,month,amount_cents,created_at&order=created_at.asc"),
+      this.request("/rest/v1/bolao_expenses?select=id,month,description,amount_cents,created_at&order=created_at.asc"),
+      this.request("/rest/v1/bolao_closures?select=month,prize_cents,winners"),
+      this.request("/rest/v1/bolao_config?select=pix_key"),
+    ]);
+    return { participants, guesses, payments, expenses, closures, config: config?.[0] };
+  },
+
+  // Palpite definitivo: o banco confere horário, castigo e duplicidade e recusa com uma mensagem
+  placeGuess(day, participantId, shirtId) {
+    return this.request("/rest/v1/rpc/bolao_place_guess", {
+      method: "POST",
+      body: { p_day: day, p_participant: participantId, p_shirt: shirtId },
+    });
+  },
+
+  addParticipant(row) {
+    return this.request("/rest/v1/bolao_participants", { method: "POST", body: row, prefer: "return=minimal" });
+  },
+
+  updateParticipant(id, patch) {
+    return this.request(`/rest/v1/bolao_participants?id=eq.${encodeURIComponent(id)}`, {
+      method: "PATCH", body: patch, prefer: "return=representation",
+    });
+  },
+
+  addPayment(row) {
+    return this.request("/rest/v1/bolao_payments", { method: "POST", body: row, prefer: "return=minimal" });
+  },
+
+  // return=representation: se o banco recusar (mês encerrado), volta vazio em vez de erro
+  deletePayment(id) {
+    return this.request(`/rest/v1/bolao_payments?id=eq.${encodeURIComponent(id)}`, { method: "DELETE", prefer: "return=representation" });
+  },
+
+  addExpense(row) {
+    return this.request("/rest/v1/bolao_expenses", { method: "POST", body: row, prefer: "return=minimal" });
+  },
+
+  deleteExpense(id) {
+    return this.request(`/rest/v1/bolao_expenses?id=eq.${encodeURIComponent(id)}`, { method: "DELETE", prefer: "return=representation" });
+  },
+
+  closeMonth(row) {
+    return this.request("/rest/v1/bolao_closures", { method: "POST", body: row, prefer: "return=minimal" });
+  },
+
+  setPixKey(pixKey) {
+    return this.request("/rest/v1/bolao_config?id=eq.true", {
+      method: "PATCH", body: { pix_key: pixKey }, prefer: "return=representation",
     });
   },
 
