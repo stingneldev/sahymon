@@ -14,6 +14,14 @@
   const { animate, splitText, stagger } = lib;
   const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
 
+  // O login-rain.js deixa os emojis em velocidade média com engine.speed (vale para todas
+  // as animações). Os textos compensam com a própria velocidade e ficam no ritmo normal.
+  const normalRate = () => 1 / (lib.engine?.speed || 1);
+  const keepNormalSpeed = (self) => {
+    const rate = normalRate();
+    if (self.speed !== rate) self.speed = rate;
+  };
+
   // Elementos animados, na ordem em que aparecem
   const ITEMS = [
     { sel: ".auth-brand span", loop: true },
@@ -51,6 +59,8 @@
             delay: stagger(50),
             loop: true,
             loopDelay: 300,
+            playbackRate: normalRate(),
+            onUpdate: keepNormalSpeed,
           })
         // Só a entrada, uma vez
         : animate(chars, {
@@ -58,6 +68,8 @@
             duration: 750,
             ease: "out(3)",
             delay: stagger(item.step ?? 35, { start: item.start ?? 0 }),
+            playbackRate: normalRate(),
+            onUpdate: keepNormalSpeed,
           }));
 
       splits.push(split);
