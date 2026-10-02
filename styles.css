@@ -167,7 +167,7 @@ button, select, label, .card, .cal-day { -webkit-tap-highlight-color: transparen
 }
 .auth-foot svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
-/* Celular: cartão compacto e emojis passando por cima dele (sem bloquear toques) para continuarem visíveis */
+/* Celular: cartão compacto, deixando espaço em volta para a chuva de emojis aparecer */
 @media (max-width: 560px) {
   .auth { padding-left: max(24px, env(safe-area-inset-left)); padding-right: max(24px, env(safe-area-inset-right)); }
   .auth-card { width: min(100%, 340px); padding: 22px 20px 14px; margin-top: 44px; border-radius: 20px; }
@@ -182,8 +182,7 @@ button, select, label, .card, .cal-day { -webkit-tap-highlight-color: transparen
   .auth-form .form-error { padding: 8px 10px; font-size: .8rem; }
   .auth-submit { height: 44px; margin-top: 2px; }
   .auth-foot { margin-top: 14px; padding-top: 10px; font-size: .7rem; }
-  .auth .rain { z-index: 2; }
-  .auth .rain-drop:not(.rain-mystery) { font-size: calc(var(--size) * .8); opacity: .9; }
+  .auth .rain-drop:not(.rain-mystery) { font-size: calc(var(--size) * .8); }
   .auth .rain-mystery { width: 52px; height: 52px; font-size: 1.7rem; }
 }
 
