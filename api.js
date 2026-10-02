@@ -205,7 +205,7 @@ const api = {
 
   async fetchBolao() {
     const [participants, guesses, payments, expenses, closures, config] = await Promise.all([
-      this.request("/rest/v1/bolao_participants?select=id,name,emoji,color,active,created_at&order=created_at.asc"),
+      this.request("/rest/v1/bolao_participants?select=id,name,color,active,created_at&order=created_at.asc"),
       this.request("/rest/v1/rpc/bolao_guess_list"),
       this.request("/rest/v1/bolao_payments?select=id,participant_id,month,amount_cents,confirmed,created_at&order=created_at.asc"),
       this.request("/rest/v1/bolao_expenses?select=id,month,description,amount_cents,created_at&order=created_at.asc"),

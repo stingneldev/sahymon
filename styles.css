@@ -297,7 +297,7 @@ button, select, label, .card, .cal-day { -webkit-tap-highlight-color: transparen
   display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px 7px 10px; border-radius: 99px;
   color: var(--muted); font-weight: 600; font-size: .9rem; text-decoration: none; transition: background .15s, color .15s;
 }
-.topnav-link img { width: 20px; height: 20px; }
+.topnav-link .ico { width: 1.15em; height: 1.15em; margin: 0; }
 .topnav-link:hover { background: var(--surface-2); color: var(--text); }
 .topnav-link[aria-current="page"] { background: var(--primary-soft); color: var(--primary); box-shadow: inset 0 0 0 1px #c7d2fe; }
 .topnav-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
@@ -440,14 +440,39 @@ button, select, label, .card, .cal-day { -webkit-tap-highlight-color: transparen
 
 /* ---------- Bolão do lanche (bolao.js) ---------- */
 .bolao-layout { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 20px; align-items: start; }
-.bolao-guess { border: 1px solid var(--border); border-radius: 16px; padding: 18px; background: var(--surface); }
+.bolao-guess, .bolao-reveal-card { border: 1px solid var(--border); border-radius: 16px; padding: 18px; background: var(--surface); }
+/* Resultado do último dia: cartão próprio ao lado do palpite */
+.bolao-reveal-card .bg-reveal { margin: 0; padding: 0; border: 0; }
 
-/* Ícones 3D (assets/emoji) no lugar dos emojis do sistema */
-.ico { display: inline-block; width: 1.25em; height: 1.25em; margin-right: .35em; vertical-align: -.28em; object-fit: contain; flex-shrink: 0; }
-.ico.is-lg { width: 36px; height: 36px; margin: 0; }
-.ico.is-xl { width: 56px; height: 56px; margin: 0; }
-.ico.is-tag { width: 18px; height: 18px; margin: 0; }
-.ico.is-medal { width: 34px; height: 34px; margin: 0; filter: drop-shadow(0 3px 4px rgba(0, 0, 0, .18)); }
+/* Ícones SVG (sprite no index.html) no lugar dos emojis */
+/* O sprite fica escondido; cada ícone é um <svg class="ico"><use href="#i-nome"/></svg> */
+.icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+.ico {
+  display: inline-block; width: 1.2em; height: 1.2em; margin-right: .35em; vertical-align: -.24em; flex-shrink: 0;
+  fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+.ico.is-lg { width: 2em; height: 2em; margin: 0; }
+.ico.is-xl { width: 3em; height: 3em; margin: 0; }
+.ico.is-tag { width: 1.05em; height: 1.05em; margin: 0; }
+.ico.is-medal { width: 34px; height: 34px; margin: 0; stroke-width: 1.8; }
+.ico.is-gold { color: #b45309; fill: #fde68a; }
+.ico.is-silver { color: #475569; fill: #e2e8f0; }
+.ico.is-bronze { color: #9a3412; fill: #fed7aa; }
+/* Cores de cada ícone dentro do bolão (botões e o cabeçalho roxo usam a cor do texto) */
+.bolao .ic-check, #payModal .ic-check { color: #059669; }
+.bolao .ic-x { color: #dc2626; }
+.bolao .ic-pause { color: #6366f1; }
+.bolao .ic-minus, .bolao .ic-lock { color: #94a3b8; }
+.bolao .ic-hourglass, .bolao .ic-clock { color: #d97706; }
+.bolao .ic-coin { color: #059669; }
+.bolao .ic-trophy, .bolao .ic-crown { color: #d97706; }
+.bolao .ic-crown { fill: #fde68a; }
+.bolao .ic-target { color: #e11d48; }
+.bolao .ic-heart { color: #db2777; fill: #fbcfe8; }
+.bolao .ic-snow { color: #0284c7; }
+.bolao .ic-eye { color: #92400e; }
+.bolao .ic-receipt { color: #b91c1c; }
+.btn .ico, .bolao-hero .ico, .topnav .ico { color: inherit; fill: none; }
 
 /* Cabeçalho do bolão */
 .bolao-hero {
@@ -463,7 +488,12 @@ button, select, label, .card, .cal-day { -webkit-tap-highlight-color: transparen
   background: radial-gradient(circle, rgba(255, 255, 255, .14), transparent 70%); pointer-events: none;
 }
 .bh-title { display: flex; align-items: center; gap: 14px; min-width: 0; }
-.bh-icon { width: 64px; height: 64px; flex-shrink: 0; filter: drop-shadow(0 8px 14px rgba(0, 0, 0, .3)); animation: bh-float 4s ease-in-out infinite; }
+.bh-icon {
+  display: grid; place-items: center; width: 64px; height: 64px; flex-shrink: 0; border-radius: 18px;
+  background: rgba(255, 255, 255, .16); border: 1px solid rgba(255, 255, 255, .28); box-shadow: 0 10px 22px rgba(0, 0, 0, .18);
+  animation: bh-float 4s ease-in-out infinite;
+}
+.bh-icon .ico { width: 36px; height: 36px; margin: 0; stroke-width: 1.8; }
 @keyframes bh-float { 0%, 100% { transform: translateY(0) rotate(-4deg); } 50% { transform: translateY(-5px) rotate(3deg); } }
 @media (prefers-reduced-motion: reduce) { .bh-icon { animation: none; } }
 .bh-title h2 { font-size: 1.5rem; letter-spacing: -.02em; line-height: 1.15; }
@@ -473,7 +503,7 @@ button, select, label, .card, .cal-day { -webkit-tap-highlight-color: transparen
   display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px 5px 6px; border-radius: 99px;
   background: rgba(255, 255, 255, .14); border: 1px solid rgba(255, 255, 255, .2); font-size: .8rem; font-weight: 600;
 }
-.bh-rules img { width: 20px; height: 20px; }
+.bh-rules .ico { width: 1.15em; height: 1.15em; margin: 0; opacity: .9; }
 .bh-stats { grid-column: 2; grid-row: 1 / span 2; display: grid; gap: 8px; min-width: 200px; }
 .bh-stat {
   display: flex; flex-direction: column; gap: 1px; padding: 9px 14px; border-radius: 14px;
@@ -490,11 +520,11 @@ button, select, label, .card, .cal-day { -webkit-tap-highlight-color: transparen
 }
 @media (max-width: 560px) {
   .bolao-hero { margin: -4px -4px 16px; padding: 18px 16px; border-radius: 16px; }
-  .bh-icon { width: 48px; height: 48px; }
+  .bh-icon { width: 48px; height: 48px; border-radius: 14px; }
+  .bh-icon .ico { width: 28px; height: 28px; }
   .bh-title h2 { font-size: 1.25rem; }
   .bh-title p { font-size: .82rem; }
   .bh-rules li { font-size: .74rem; padding: 4px 10px 4px 5px; }
-  .bh-rules img { width: 16px; height: 16px; }
   .bh-stats { gap: 6px; }
   .bh-stat { padding: 8px 10px; }
   .bh-stat > span { font-size: .6rem; letter-spacing: .03em; }
@@ -503,17 +533,17 @@ button, select, label, .card, .cal-day { -webkit-tap-highlight-color: transparen
   .bolao-guess, .bolao-rank { padding: 14px; }
 }
 
-/* Avatar do participante: bichinho 3D num círculo da cor dele */
+/* Avatar do participante: inicial do nome num círculo da cor dele */
 .bp-avatar {
   --c: var(--primary);
-  flex-shrink: 0; display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; overflow: hidden;
-  background: radial-gradient(circle at 50% 35%, #fff, color-mix(in srgb, var(--c) 22%, #fff));
-  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--c) 60%, #fff);
+  flex-shrink: 0; display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: 50%;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--c) 78%, #fff), var(--c) 55%, color-mix(in srgb, var(--c) 80%, #000));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), 0 2px 6px color-mix(in srgb, var(--c) 35%, transparent);
+  color: #fff; font-weight: 800; font-size: .95rem; line-height: 1; text-shadow: 0 1px 2px rgba(0, 0, 0, .25);
 }
-.bp-avatar img { width: 80%; height: 80%; object-fit: contain; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, .15)); }
-.bp-avatar.is-sm { width: 26px; height: 26px; }
-.bp-avatar.is-xs { width: 22px; height: 22px; box-shadow: none; }
-.bp-avatar.is-lg { width: 64px; height: 64px; box-shadow: inset 0 0 0 3px var(--c), 0 8px 18px color-mix(in srgb, var(--c) 35%, transparent); }
+.bp-avatar.is-sm { width: 26px; height: 26px; font-size: .72rem; }
+.bp-avatar.is-xs { width: 22px; height: 22px; font-size: .64rem; box-shadow: none; }
+.bp-avatar.is-lg { width: 64px; height: 64px; font-size: 1.6rem; box-shadow: 0 0 0 4px #fff, 0 0 0 6px var(--c), 0 10px 20px color-mix(in srgb, var(--c) 35%, transparent); }
 
 /* Palpite do dia */
 .bg-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 14px; }
@@ -574,41 +604,16 @@ button, select, label, .card, .cal-day { -webkit-tap-highlight-color: transparen
 .bg-rested { margin-top: 8px; font-size: .8rem; color: var(--muted); }
 
 /* Caixa do mês */
-.bolao-month { border: 1px solid var(--border); border-radius: 14px; padding: 14px; background: linear-gradient(180deg, #fafbff, var(--surface)); }
-.bolao-month-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
-.bolao-month-nav .icon-btn { font-size: 1.4rem; line-height: 1; }
-.bolao-month-nav .icon-btn:disabled { opacity: .3; cursor: default; background: transparent; }
 .bm-closed {
   display: flex; gap: 10px; align-items: center; margin-bottom: 12px; padding: 10px 12px; border-radius: 12px;
   background: linear-gradient(135deg, #fff7e6, #fef3c7); border: 1px solid #fde68a; font-size: 1.4rem;
 }
 .bm-closed .ico.is-lg { flex-shrink: 0; }
+.ba-month { display: flex; align-items: center; gap: 4px; }
+.ba-month .icon-btn { font-size: 1.3rem; line-height: 1; }
+.ba-month .icon-btn:disabled { opacity: .3; cursor: default; background: transparent; }
 .bm-closed div { display: flex; flex-direction: column; font-size: .85rem; }
 .bm-closed span { color: #78350f; }
-.bm-cash { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.bm-cash > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 10px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); }
-.bm-cash span { font-size: .72rem; font-weight: 600; color: var(--muted); }
-.bm-cash b { font-size: 1.05rem; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bm-cash .bm-prize { background: var(--primary-soft); border-color: #c7d2fe; }
-.bm-cash .bm-prize b { color: var(--primary); }
-.bm-note { margin: 8px 0 10px; font-size: .8rem; }
-.bm-debts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.bm-label { width: 100%; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
-.bm-debt {
-  display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 3px; border-radius: 99px;
-  background: #fef2f2; color: #991b1b; font-size: .8rem; font-weight: 600;
-}
-.bm-debt b { color: #b91c1c; }
-.bm-paid { font-size: .82rem; font-weight: 600; color: #047857; }
-.bm-pix {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; padding: 10px 12px;
-  border-radius: 12px; border: 1px dashed #c7d2fe; background: var(--primary-soft); font-size: .82rem;
-}
-.bm-pix code { flex: 1; min-width: 0; padding: 3px 8px; border-radius: 6px; background: #fff; font-family: ui-monospace, Consolas, monospace; word-break: break-all; }
-.bm-expenses { margin-top: 12px; font-size: .85rem; }
-.bm-expenses summary { cursor: pointer; font-weight: 600; color: var(--muted); }
-.bm-expenses ul { list-style: none; margin-top: 6px; }
-.bm-expenses li { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px dashed var(--border); }
 
 /* Ranking */
 .bolao-rank { margin-top: 20px; padding: 18px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
@@ -689,7 +694,11 @@ button, select, label, .card, .cal-day { -webkit-tap-highlight-color: transparen
   background: linear-gradient(135deg, #ecfdf5 0%, #f0fdfa 55%, #ffffff 100%);
 }
 .bw-main { display: flex; align-items: center; gap: 14px; min-width: 0; }
-.ico.bw-icon { width: 56px; height: 56px; margin: 0; filter: drop-shadow(0 6px 10px rgba(4, 120, 87, .25)); }
+.bw-icon {
+  display: grid; place-items: center; width: 56px; height: 56px; flex-shrink: 0; border-radius: 16px;
+  background: linear-gradient(135deg, #10b981, #047857); color: #fff; box-shadow: 0 8px 18px rgba(4, 120, 87, .3);
+}
+.bw-icon .ico { width: 30px; height: 30px; margin: 0; color: #fff; }
 .bw-text { display: flex; flex-direction: column; min-width: 0; }
 .bw-label { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: #047857; }
 .bw-value { font-size: 2.1rem; font-weight: 800; letter-spacing: -.03em; line-height: 1.1; color: #064e3b; }
@@ -729,10 +738,6 @@ button, select, label, .card, .cal-day { -webkit-tap-highlight-color: transparen
 .buy-preview b.is-neg { color: #b91c1c; }
 .buy-arrow { font-size: 1.3rem; color: var(--muted); }
 .buy-warn { width: 100%; padding: 6px 8px; border-radius: 8px; background: #fef2f2; color: #b91c1c; font-size: .8rem; }
-button.bm-debt { border: none; cursor: pointer; transition: background .15s; }
-button.bm-debt:hover:not(:disabled) { background: #fee2e2; }
-button.bm-debt:disabled { cursor: default; }
-.bm-debt small { font-weight: 600; color: #92400e; }
 .ba-lists li.is-pending { background: #fffbeb; border-color: #fde68a; }
 
 /* Pagar o bolão: escolher quem paga → valor e QR Code → pronto */
@@ -756,12 +761,6 @@ button.bm-debt:disabled { cursor: default; }
 .pay-who { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); margin-bottom: 12px; }
 .pay-who div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .pay-who span { font-size: .8rem; color: var(--muted); }
-.pay-amounts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
-.pay-chip { border: 1px solid var(--border); background: var(--surface); border-radius: 99px; padding: 6px 12px; font-size: .82rem; font-weight: 600; }
-.pay-chip.is-on { border-color: var(--primary); background: var(--primary); color: #fff; }
-.pay-custom { display: flex; gap: 8px; margin: -4px 0 12px; }
-.pay-custom input { flex: 1; min-width: 0; height: 38px; padding: 0 10px; font-size: 16px; border: 1px solid var(--border); border-radius: 10px; outline: none; }
-.pay-custom input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
 .pay-qr-wrap { display: flex; align-items: center; gap: 16px; padding: 14px; border-radius: 16px; border: 1px solid var(--border); background: linear-gradient(135deg, #f8fafc, #eef2ff); }
 .pay-qr { position: relative; flex-shrink: 0; width: 168px; height: 168px; padding: 10px; border-radius: 12px; background: #fff; box-shadow: 0 6px 18px rgba(15, 23, 42, .1); }
 .pay-qr svg { display: block; width: 100%; height: 100%; }
@@ -779,12 +778,18 @@ button.bm-debt:disabled { cursor: default; }
   flex: 1; min-width: 0; height: 38px; padding: 0 10px; border: 1px solid var(--border); border-radius: 10px;
   background: var(--surface-2); font-family: ui-monospace, Consolas, monospace; font-size: .78rem; color: var(--text);
 }
+.pay-fixed { margin-bottom: 12px; padding: 8px 12px; border-radius: 10px; background: #ecfdf5; color: #065f46; font-size: .85rem; }
 .pay-howto { margin: 12px 0 14px 18px; font-size: .82rem; color: var(--muted); display: flex; flex-direction: column; gap: 2px; }
 .pay-howto b { color: var(--text); }
 .pay-done { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px 0 4px; text-align: center; }
-.pay-done .pay-done-icon { width: 72px; height: 72px; margin: 0; animation: br-bounce 1.6s ease-in-out infinite; }
+.pay-done-icon {
+  display: grid; place-items: center; width: 72px; height: 72px; border-radius: 50%;
+  background: linear-gradient(135deg, #34d399, #059669); color: #fff; box-shadow: 0 10px 24px rgba(5, 150, 105, .35);
+  animation: br-bounce 1.6s ease-in-out infinite;
+}
+.pay-done-icon .ico { width: 36px; height: 36px; margin: 0; color: #fff; }
 .pay-title { display: flex; align-items: center; gap: 8px; }
-.pay-title img { width: 28px; height: 28px; }
+.pay-title .ico { width: 1.3em; height: 1.3em; margin: 0; color: var(--primary); }
 .pay-done p { color: var(--muted); font-size: .9rem; max-width: 34ch; }
 
 /* Participantes e caixa */
@@ -794,7 +799,7 @@ button.bm-debt:disabled { cursor: default; }
 .bolao-admin[open] > summary::after { transform: rotate(90deg); }
 .bolao-admin > summary::-webkit-details-marker { display: none; }
 .bolao-admin > summary { list-style: none; }
-.bolao-admin > summary img { width: 22px; height: 22px; }
+.bolao-admin > summary .ico { width: 1.2em; height: 1.2em; margin: 0; color: var(--primary); }
 .bolao-admin[open] > summary { border-bottom: 1px solid var(--border); }
 #bolaoAdmin { display: flex; flex-direction: column; gap: 18px; padding: 16px; }
 .ba-block { display: flex; flex-direction: column; gap: 10px; }
@@ -811,14 +816,14 @@ button.bm-debt:disabled { cursor: default; }
   border-radius: 50%; background: var(--primary); color: #fff; font-size: .6rem; box-shadow: 0 0 0 2px var(--surface);
 }
 .ba-avatar-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-.ba-avatars { display: grid; grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); gap: 6px; width: 100%; margin-top: 8px; }
-.ba-av {
-  display: grid; place-items: center; aspect-ratio: 1; padding: 6px; border: 2px solid var(--border); border-radius: 12px;
-  background: var(--surface); transition: border-color .15s, transform .15s;
+.ba-colors { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; margin-top: 10px; }
+.ba-color {
+  width: 34px; height: 34px; border-radius: 50%; border: 3px solid #fff; background: var(--c);
+  box-shadow: 0 0 0 1px var(--border); transition: transform .15s, box-shadow .15s;
 }
-.ba-av img { width: 100%; height: 100%; object-fit: contain; }
-.ba-av:hover { border-color: #c7d2fe; transform: translateY(-2px); }
-.ba-av.is-on { border-color: var(--primary); background: var(--primary-soft); }
+.ba-color:hover { transform: scale(1.1); }
+.ba-color.is-on { box-shadow: 0 0 0 2px var(--c), 0 0 0 4px #fff, 0 0 0 5px var(--c); }
+.ba-color:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
 .ba-new { flex-wrap: wrap; }
 .ba-pname { flex: 1; min-width: 0; font-weight: 600; font-size: .88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ba-pname small { font-weight: 500; color: var(--muted); }
@@ -1052,8 +1057,8 @@ body.modal-open { overflow: hidden; }
   .topnav { margin-left: 10px; }
   .topnav-link { padding: 7px 10px 7px 8px; font-size: .84rem; }
   .bw-value { font-size: 1.8rem; }
+  .bw-flow { grid-template-columns: minmax(0, 1fr); }
   .ba-forms, .ba-lists { grid-template-columns: minmax(0, 1fr); }
-  .bm-cash b { font-size: .9rem; white-space: normal; overflow-wrap: anywhere; }
   .bg-shirts { grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 8px; }
   .bg-shirt { padding: 6px; }
   .bg-name { font-size: .72rem; }

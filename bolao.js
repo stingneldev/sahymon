@@ -20,17 +20,11 @@
 const GUESS_CENTS = 100;
 const GUESS_CUTOFF = "12:00"; // o mesmo horário de bolao_cutoff() no banco
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-// Emojis 3D (Fluent Emoji, MIT) em assets/emoji/<chave>.png: avatares e ícones da seção
-const EMOJI_DIR = "assets/emoji/";
-const AVATARS = {
-  chipmunk: "Esquilo", fox: "Raposa", panda: "Panda", frog: "Sapo", lion: "Leão", tiger: "Tigre",
-  koala: "Coala", owl: "Coruja", unicorn: "Unicórnio", raccoon: "Guaxinim", wolf: "Lobo", hedgehog: "Ouriço",
-  sloth: "Preguiça", shark: "Tubarão", alien: "Alien", robot: "Robô",
-};
-const AVATAR_KEYS = Object.keys(AVATARS);
-const AVATAR_COLORS = ["#4f46e5", "#a855f7", "#ec4899", "#f59e0b", "#10b981", "#0ea5e9", "#ef4444", "#14b8a6"];
-const MEDALS = ["medal1", "medal2", "medal3"];
-const icon = (key, cls = "") => `<img class="ico ${cls}" src="${EMOJI_DIR}${key}.png" alt="" aria-hidden="true" />`;
+// Ícones SVG do sprite no index.html (#i-<nome>): crescem com o texto e usam a cor de onde estão
+const icon = (key, cls = "") => `<svg class="ico ic-${key} ${cls}" aria-hidden="true"><use href="#i-${key}"/></svg>`;
+// Cor do avatar de cada participante (o avatar mostra a inicial do nome)
+const AVATAR_COLORS = ["#4f46e5", "#a855f7", "#ec4899", "#f59e0b", "#10b981", "#0ea5e9", "#ef4444", "#14b8a6", "#f97316", "#64748b"];
+const MEDALS = ["is-gold", "is-silver", "is-bronze"];
 const KEY_PLAYER = "esquilook:bolao-jogador"; // último participante escolhido neste aparelho
 const DEMO_PIX = { key: "caixa-do-lanche@exemplo.com", name: "Caixa do lanche", city: "VITORIA" };
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -50,8 +44,8 @@ const bolao = {
   month: null,      // "YYYY-MM" do caixa e do ranking mensal
   scope: "month",   // ranking: "month" ou "all"
   picked: null,     // participante escolhido para palpitar
-  avatarFor: null,  // participante (ou "new") com a grade de avatares aberta
-  newAvatar: null,  // avatar escolhido para o próximo participante
+  avatarFor: null,  // participante (ou "new") com a grade de cores aberta
+  newColor: null,   // cor escolhida para o próximo participante
   openDetails: new Set(), // listas recolhíveis abertas (continuam abertas quando a tela se atualiza)
 };
 
@@ -84,7 +78,6 @@ function applyBolao(d) {
     .map((p) => ({
       id: p.id,
       name: p.name.trim().slice(0, 24),
-      emoji: AVATAR_KEYS.includes(p.emoji) ? p.emoji : AVATAR_KEYS[0],
       color: COLOR_RE.test(p.color) ? p.color : AVATAR_COLORS[0],
       active: p.active !== false,
     }));
@@ -120,8 +113,8 @@ const backend = () => (bolao.demo ? demoApi : api);
 const demo = { data: null };
 // Os mesmos participantes que o schema.sql cadastra
 const DEMO_PEOPLE = [
-  ["Stingnel", "wolf", "#4f46e5"], ["Manito", "fox", "#f59e0b"], ["Ortelas", "owl", "#a855f7"],
-  ["Balothalis", "lion", "#ef4444"], ["Lolo", "koala", "#10b981"], ["Gabriel", "raccoon", "#0ea5e9"],
+  ["Stingnel", "#4f46e5"], ["Manito", "#f59e0b"], ["Ortelas", "#a855f7"],
+  ["Balothalis", "#ef4444"], ["Lolo", "#10b981"], ["Gabriel", "#0ea5e9"],
 ];
 
 function demoId() {
@@ -136,8 +129,8 @@ function makeDemo() {
   let seed = 20261001;
   const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   const shirts = state.shirts.map((s) => s.id);
-  const people = DEMO_PEOPLE.map(([name, emoji, color], i) => ({
-    id: `00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`, name, emoji, color, active: true,
+  const people = DEMO_PEOPLE.map(([name, color], i) => ({
+    id: `00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`, name, color, active: true,
   }));
   const results = {};
   const guesses = [];
@@ -281,7 +274,7 @@ function guessStatus(g) {
 
 const STATUS_INFO = {
   hit: { icon: "check", label: "acertou" },
-  miss: { icon: "cross", label: "errou" },
+  miss: { icon: "x", label: "errou" },
   void: { icon: "pause", label: "anulado (acertou na véspera)" },
   absent: { icon: "minus", label: "dia anulado (falta)" },
   pending: { icon: "hourglass", label: "aguardando a camisa" },
@@ -357,8 +350,8 @@ function rankingFor(inPeriod) {
     r.badges = [];
     if (top > 0 && r.hits === top) r.badges.push(["crown", "Líder em pontos"]);
     if (bestRate > 0 && r.charged >= 3 && r.rate === bestRate) r.badges.push(["target", "Mira afiada: melhor aproveitamento"]);
-    if (mostPlayed >= 3 && r.charged === mostPlayed) r.badges.push(["chipmunk", "Fiel ao bolão: mais palpites"]);
-    if (coldest >= 3 && r.coldStreak === coldest) r.badges.push(["cold", `Pé-frio: ${r.coldStreak} erros seguidos`]);
+    if (mostPlayed >= 3 && r.charged === mostPlayed) r.badges.push(["heart", "Fiel ao bolão: mais palpites"]);
+    if (coldest >= 3 && r.coldStreak === coldest) r.badges.push(["snow", `Pé-frio: ${r.coldStreak} erros seguidos`]);
     if (today && isResting(r.p.id, today)) r.badges.push(["pause", "Acertou e descansa no próximo palpite"]);
   });
   return now;
@@ -407,8 +400,9 @@ const firstMonth = () => {
 };
 const lastMonth = () => (monthOf(todayKey()) < monthKey(CAL_END) ? monthOf(todayKey()) : monthKey(CAL_END));
 const clampMonth = (ym) => (ym < firstMonth() ? firstMonth() : ym > lastMonth() ? lastMonth() : ym);
+const initialOf = (name) => (String(name).trim().charAt(0) || "?").toUpperCase();
 const avatar = (p, cls = "") =>
-  `<span class="bp-avatar ${cls}" style="--c:${p.color}" aria-hidden="true"><img src="${EMOJI_DIR}${p.emoji}.png" alt="" /></span>`;
+  `<span class="bp-avatar ${cls}" style="--c:${p.color}" aria-hidden="true">${escapeHtml(initialOf(p.name))}</span>`;
 const bolaoNote = (html) => `<p class="bg-note">${html}</p>`;
 
 function renderBolao() {
@@ -417,7 +411,7 @@ function renderBolao() {
   if (bolao.demo) applyBolao(demoSnapshot());
   $("#bolaoDemo").classList.toggle("hidden", !bolao.demo);
   $("#bolaoDemo").innerHTML = bolao.demo
-    ? `<strong>${icon("eyes")}Modo demonstração</strong>
+    ? `<strong>${icon("eye")}Modo demonstração</strong>
        <span>O bolão ainda não foi ativado no banco de dados. Participantes, palpites e pagamentos abaixo são
        de exemplo e nada é salvo: ao recarregar a página, tudo volta ao início. A camisa registrada no
        calendário é real e já entra no resultado.</span>`
@@ -426,7 +420,6 @@ function renderBolao() {
   renderBolaoHero();
   renderBolaoWallet();
   renderBolaoGuess();
-  renderBolaoMonth();
   renderBolaoRank();
   renderBolaoAdmin();
   if (!$("#payModal").classList.contains("hidden")) renderPay();
@@ -461,13 +454,8 @@ function walletStats() {
   const sum = (list, f) => list.reduce((a, x) => a + f(x), 0);
   const confirmed = bolao.payments.filter((p) => p.confirmed);
   const received = sum(confirmed, (p) => p.amount_cents);
-  const pending = sum(bolao.payments.filter((p) => !p.confirmed), (p) => p.amount_cents);
   const snacks = sum(bolao.expenses, (x) => x.amount_cents);
   const prizes = sum(bolao.closures, (c) => c.prize_cents);
-
-  const paidBy = new Map();
-  for (const p of confirmed) paidBy.set(p.participant_id, (paidBy.get(p.participant_id) ?? 0) + p.amount_cents);
-  const missing = sum(scoreboard(() => true).list, (r) => Math.max(0, r.charged * GUESS_CENTS - (paidBy.get(r.p.id) ?? 0)));
 
   const moves = [
     ...confirmed.map((p) => ({ at: p.created_at, cents: p.amount_cents, icon: "coin", label: `Pix de ${participantById(p.participant_id)?.name ?? "?"}` })),
@@ -478,7 +466,7 @@ function walletStats() {
     })),
   ].sort((a, b) => String(b.at).localeCompare(String(a.at)));
 
-  return { received, pending, snacks, prizes, missing, moves, balance: received - snacks - prizes };
+  return { received, snacks, moves, balance: received - snacks - prizes };
 }
 
 function renderBolaoWallet() {
@@ -488,7 +476,7 @@ function renderBolaoWallet() {
   $("#bolaoWallet").innerHTML = `
     <div class="bw-card">
       <div class="bw-main">
-        ${icon("moneybag", "bw-icon")}
+        <span class="bw-icon">${icon("wallet")}</span>
         <div class="bw-text">
           <span class="bw-label">Saldo do caixa</span>
           <strong class="bw-value ${w.balance < 0 ? "is-neg" : ""}">${money(w.balance)}</strong>
@@ -498,9 +486,6 @@ function renderBolaoWallet() {
       <ul class="bw-flow">
         <li><span>Entrou</span><b class="${w.received ? "is-in" : ""}">${w.received ? signed(w.received) : money(0)}</b></li>
         <li><span>Lanche</span><b class="${w.snacks ? "is-out" : ""}">${w.snacks ? signed(-w.snacks) : money(0)}</b></li>
-        <li title="Prêmios pagos nos meses encerrados"><span>Prêmios</span><b class="${w.prizes ? "is-out" : ""}">${w.prizes ? signed(-w.prizes) : money(0)}</b></li>
-        <li title="Palpites que ainda não foram pagos"><span>A receber</span><b>${money(w.missing)}</b></li>
-        ${w.pending ? `<li title="Pix informados que o caixa ainda não confirmou"><span>A confirmar</span><b>${money(w.pending)}</b></li>` : ""}
       </ul>
       <div class="bw-actions">
         <button class="btn btn-primary" id="bolaoBuyOpen" type="button">${icon("receipt")}Registrar compra do lanche</button>
@@ -582,7 +567,7 @@ function renderBolaoGuess() {
         <span class="bg-eyebrow">${isToday ? "Palpite de hoje" : "Próximo palpite"}</span>
         <strong class="bg-day">${formatDate(day)}</strong>
         <span class="bg-meta">${icon("clock")}Fecha ao meio-dia${isToday ? ` · ${timeLeft(day)}` : ""} · ${done.length} de ${people.length - resting.length} já palpitaram</span>
-        <span class="bg-pot">${icon("moneybag")}Bolão do dia: <b>${money(pot * GUESS_CENTS)}</b> em ${pot} ${pot === 1 ? "palpite" : "palpites"}</span>
+        <span class="bg-pot">${icon("coin")}Bolão do dia: <b>${money(pot * GUESS_CENTS)}</b> em ${pot} ${pot === 1 ? "palpite" : "palpites"}</span>
       </div>`;
 
     if (!people.length) {
@@ -610,7 +595,8 @@ function renderBolaoGuess() {
     }
   }
 
-  $("#bolaoGuess").innerHTML = html + renderReveal();
+  $("#bolaoGuess").innerHTML = html;
+  $("#bolaoReveal").innerHTML = renderReveal() || bolaoNote("O resultado aparece aqui depois do primeiro dia de palpites.");
 }
 
 // Palpites do último dia fechado: quem acertou, quem errou e quem descansou
@@ -651,54 +637,6 @@ function renderReveal() {
     </div>`;
 }
 
-function renderBolaoMonth() {
-  const ym = bolao.month;
-  const cash = cashFor(ym);
-  const closure = closureOf(ym);
-  $("#bolaoMonthLabel").textContent = monthLabel(ym);
-  $("#bolaoPrev").disabled = ym <= firstMonth();
-  $("#bolaoNext").disabled = ym >= lastMonth();
-
-  let html = "";
-  if (closure) {
-    html += `
-      <div class="bm-closed">${icon("trophy", "is-lg")}<div><strong>Mês encerrado</strong>
-        <span>${closure.winners
-          ? `Prêmio de ${money(closure.prize_cents)} para ${escapeHtml(closure.winners)}`
-          : `Ninguém pontuou: a sobra de ${money(closure.prize_cents)} fica com o grupo`}</span></div></div>`;
-  }
-
-  html += `
-    <div class="bm-cash">
-      <div><span>Recebido</span><b>${money(cash.received)}</b></div>
-      <div><span>Lanche</span><b>${money(cash.spent)}</b></div>
-      <div class="bm-prize"><span>${closure ? "Prêmio" : "Sobra (prêmio)"}</span><b>${money(closure ? closure.prize_cents : cash.prize)}</b></div>
-    </div>
-    <p class="bm-note muted">${cash.expected ? `${money(cash.expected)} em palpites valendo` : "Nenhum palpite valendo ainda"}${cash.missing ? ` · faltam ${money(cash.missing)} a receber` : ""}${cash.pending ? ` · ${money(cash.pending)} aguardando confirmação` : ""}</p>`;
-
-  const debtors = cash.people.filter((r) => r.owed > 0).sort((a, b) => b.owed - a.owed);
-  if (debtors.length) {
-    html += `<div class="bm-debts"><span class="bm-label">A pagar · toque para pagar</span>` +
-      debtors.map((r) => `
-        <button class="bm-debt" data-pay="${r.p.id}" type="button" ${closure ? "disabled" : ""}>
-          ${avatar(r.p, "is-xs")}${escapeHtml(r.p.name)} <b>${money(r.owed)}</b>${r.pending ? ` <small>${icon("hourglass")}${money(r.pending)}</small>` : ""}
-        </button>`).join("") + `</div>`;
-  } else if (cash.expected) {
-    html += `<p class="bm-paid">${icon("check")}Todo mundo em dia</p>`;
-  }
-
-  const expenses = bolao.expenses.filter((x) => monthOf(x.month) === ym);
-  if (expenses.length) {
-    html += `
-      <details class="bm-expenses" data-keep="expenses" ${bolao.openDetails.has("expenses") ? "open" : ""}>
-        <summary>Gastos com lanche (${expenses.length})</summary>
-        <ul>${expenses.map((x) => `<li><span>${escapeHtml(x.description)}</span><b>${money(x.amount_cents)}</b></li>`).join("")}</ul>
-      </details>`;
-  }
-
-  $("#bolaoMonth").innerHTML = html;
-}
-
 function renderBolaoRank() {
   const ym = bolao.month;
   const monthly = bolao.scope === "month";
@@ -729,7 +667,7 @@ function renderBolaoRank() {
       ${avatar(r.p, "is-lg")}
       <strong>${escapeHtml(r.p.name)}</strong>
       <span class="br-step-pts"><b>${r.hits}</b> ${r.hits === 1 ? "ponto" : "pontos"}</span>
-      <div class="br-block">${icon(MEDALS[Math.min(r.pos, 3) - 1], "is-medal")}<small>${pct(r.rate)} de acerto</small></div>
+      <div class="br-block">${icon("medal", `is-medal ${MEDALS[Math.min(r.pos, 3) - 1]}`)}<small>${pct(r.rate)} de acerto</small></div>
     </div>`).join("") + `</div>`;
 
   const move = (m) => (m > 0 ? `<small class="br-move up" title="Subiu ${m}">▲${m}</small>`
@@ -751,7 +689,7 @@ function renderBolaoRank() {
     <p class="br-legend">
       <span><i class="dot-hit"></i>acerto</span><span><i class="dot-miss"></i>erro</span>
       <span><i class="dot-void"></i>anulado</span><span><i class="dot-absent"></i>falta</span>
-      <span>${icon("crown")}líder</span><span>${icon("target")}mira afiada</span><span>${icon("chipmunk")}fiel</span><span>${icon("cold")}pé-frio</span><span>${icon("pause")}descansando</span>
+      <span>${icon("crown")}líder</span><span>${icon("target")}mira afiada</span><span>${icon("heart")}fiel</span><span>${icon("snow")}pé-frio</span><span>${icon("pause")}descansando</span>
     </p>`;
 
   $("#bolaoRank").innerHTML = html;
@@ -770,20 +708,19 @@ function renderBolaoAdmin() {
   const pays = bolao.payments.filter((p) => monthOf(p.month) === ym).sort((a, b) => a.confirmed - b.confirmed);
   const exps = bolao.expenses.filter((x) => monthOf(x.month) === ym);
   const canClose = !closed && ym < monthOf(todayKey());
-  const del = (attr, id, label) => (closed ? "" : `<button class="icon-btn" ${attr}="${id}" type="button" aria-label="${label}" title="${label}">✕</button>`);
+  const del = (attr, id, label) => (closed ? "" : `<button class="icon-btn" ${attr}="${id}" type="button" aria-label="${label}" title="${label}">${icon("close", "is-tag")}</button>`);
   const shortDay = (iso) => formatDate(toKey(new Date(iso)), { day: "2-digit", month: "2-digit" });
-  // Grade de avatares: abre embaixo de quem está trocando (ou do formulário de novo participante)
-  const used = new Set(bolao.participants.map((p) => p.emoji));
-  bolao.newAvatar ??= AVATAR_KEYS.find((k) => !used.has(k)) ?? AVATAR_KEYS[0];
-  const avatarGrid = (current, label) => `
-    <div class="ba-avatars" role="group" aria-label="${label}">${AVATAR_KEYS.map((k) => `
-      <button type="button" class="ba-av ${k === current ? "is-on" : ""}" data-avatar-set="${k}" title="${AVATARS[k]}" aria-pressed="${k === current}">
-        <img src="${EMOJI_DIR}${k}.png" alt="${AVATARS[k]}" />
-      </button>`).join("")}
+  // Cores do avatar: a grade abre embaixo de quem está trocando (ou do formulário de novo participante)
+  const used = new Set(bolao.participants.map((p) => p.color));
+  bolao.newColor ??= AVATAR_COLORS.find((c) => !used.has(c)) ?? AVATAR_COLORS[0];
+  const colorGrid = (current, label) => `
+    <div class="ba-colors" role="group" aria-label="${label}">${AVATAR_COLORS.map((c) => `
+      <button type="button" class="ba-color ${c === current ? "is-on" : ""}" data-color-set="${c}" style="--c:${c}"
+              aria-label="Cor ${c}" aria-pressed="${c === current}"></button>`).join("")}
     </div>`;
   const avatarBtn = (p, id) => `
     <button class="ba-avatar-btn" data-avatar-edit="${id}" type="button" aria-expanded="${bolao.avatarFor === id}"
-            title="Trocar avatar" aria-label="Trocar avatar${p.name ? ` de ${escapeHtml(p.name)}` : ""}">${avatar(p)}</button>`;
+            title="Trocar a cor" aria-label="Trocar a cor${p.name ? ` de ${escapeHtml(p.name)}` : ""}">${avatar(p)}</button>`;
 
   el.innerHTML = `
     <div class="ba-block">
@@ -796,14 +733,14 @@ function renderBolaoAdmin() {
             <button class="btn btn-ghost btn-sm" data-rename="${p.id}" type="button">Renomear</button>
             <button class="btn btn-ghost btn-sm" data-toggle="${p.id}" type="button">${p.active ? "Tirar" : "Voltar"}</button>
           </div>
-          ${bolao.avatarFor === p.id ? avatarGrid(p.emoji, `Avatar de ${escapeHtml(p.name)}`) : ""}
+          ${bolao.avatarFor === p.id ? colorGrid(p.color, `Cor de ${escapeHtml(p.name)}`) : ""}
         </li>`).join("")}
       </ul>
       <form class="ba-form ba-new" id="bolaoPersonForm">
-        ${avatarBtn({ name: "", emoji: bolao.newAvatar, color: AVATAR_COLORS[bolao.participants.length % AVATAR_COLORS.length] }, "new")}
+        ${avatarBtn({ name: "+", color: bolao.newColor }, "new")}
         <input id="bolaoPersonName" maxlength="24" autocomplete="off" placeholder="Nome do participante" aria-label="Nome do participante" required />
         <button class="btn btn-primary btn-sm" type="submit">Adicionar</button>
-        ${bolao.avatarFor === "new" ? avatarGrid(bolao.newAvatar, "Avatar do novo participante") : ""}
+        ${bolao.avatarFor === "new" ? colorGrid(bolao.newColor, "Cor do novo participante") : ""}
       </form>
     </div>
 
@@ -819,9 +756,18 @@ function renderBolaoAdmin() {
 
     <div class="ba-block">
       <div class="ba-head">
-        <span class="ba-title">Caixa · ${monthLabel(ym)}</span>
+        <div class="ba-month">
+          <button id="bolaoPrev" class="icon-btn" type="button" aria-label="Mês anterior" ${ym <= firstMonth() ? "disabled" : ""}>‹</button>
+          <span class="ba-title">Caixa · ${monthLabel(ym)}</span>
+          <button id="bolaoNext" class="icon-btn" type="button" aria-label="Próximo mês" ${ym >= lastMonth() ? "disabled" : ""}>›</button>
+        </div>
         ${canClose ? `<button class="btn btn-primary btn-sm" id="bolaoClose" type="button">Encerrar mês</button>` : ""}
       </div>
+      ${closed ? `
+      <div class="bm-closed">${icon("trophy", "is-lg")}<div><strong>Mês encerrado</strong>
+        <span>${closureOf(ym).winners
+          ? `Prêmio de ${money(closureOf(ym).prize_cents)} para ${escapeHtml(closureOf(ym).winners)}`
+          : `Ninguém pontuou: a sobra de ${money(closureOf(ym).prize_cents)} fica com o grupo`}</span></div></div>` : ""}
       ${closed ? `<p class="muted">Mês encerrado: pagamentos e gastos travados.</p>` : `
       <div class="ba-forms">
         <form class="ba-form" id="bolaoPayForm">
@@ -832,8 +778,7 @@ function renderBolaoAdmin() {
               return `<option value="${p.id}">${escapeHtml(p.name)}${owed > 0 ? ` · deve ${money(owed)}` : ""}</option>`;
             }).join("")}
           </select>
-          <input id="bolaoPayValue" inputmode="decimal" autocomplete="off" placeholder="Valor (R$)" aria-label="Valor pago" required />
-          <button class="btn btn-primary btn-sm" type="submit">Registrar</button>
+          <button class="btn btn-primary btn-sm" type="submit">Registrar ${money(GUESS_CENTS)}</button>
         </form>
         <form class="ba-form" id="bolaoExpForm">
           <span class="ba-sub">Registrar gasto com lanche</span>
@@ -869,11 +814,11 @@ function renderBolaoAdmin() {
 
 /* ---------------- Pagamento com QR Code ---------------- */
 
-const pay = { pid: null, cents: null, custom: false, sent: null };
+const pay = { pid: null, cents: GUESS_CENTS, sent: null };
 const payMonth = () => clampMonth(monthOf(todayKey()));
 
 function openPay(pid = null) {
-  Object.assign(pay, { pid: pid ?? rememberedPlayer(), cents: null, custom: false, sent: null });
+  Object.assign(pay, { pid: pid ?? rememberedPlayer(), cents: GUESS_CENTS, sent: null });
   $("#payModal").classList.remove("hidden");
   syncModalLock();
   renderPay();
@@ -892,14 +837,14 @@ function renderPay() {
   const row = person && cash.people.find((r) => r.p.id === person.id);
   const due = Math.max(0, (row?.owed ?? 0) - (row?.pending ?? 0));
   const step = pay.sent ? 3 : person ? 2 : 1;
-  const steps = ["Quem paga", "Valor e QR Code", "Pronto"].map((label, i) =>
-    `<li class="${i + 1 === step ? "is-now" : i + 1 < step ? "is-done" : ""}"><span>${i + 1 < step ? "✓" : i + 1}</span>${label}</li>`).join("");
+  const steps = ["Quem paga", "QR Code", "Pronto"].map((label, i) =>
+    `<li class="${i + 1 === step ? "is-now" : i + 1 < step ? "is-done" : ""}"><span>${i + 1 < step ? icon("tick", "is-tag") : i + 1}</span>${label}</li>`).join("");
   let html = `<ol class="pay-steps">${steps}</ol>`;
 
   if (pay.sent) {
     html += `
       <div class="pay-done">
-        ${icon("party", "pay-done-icon")}
+        <span class="pay-done-icon">${icon("sparkles")}</span>
         <strong>Pagamento de ${money(pay.sent.cents)} informado!</strong>
         <p>Agora o caixa confere o extrato e confirma. Até lá, aparece como aguardando confirmação.</p>
         <button class="btn btn-primary" data-pay-close type="button">Fechar</button>
@@ -915,22 +860,17 @@ function renderPay() {
         </button>`;
       }).join("") + `</div>`;
   } else {
-    pay.cents ??= due || 500;
+    pay.cents = GUESS_CENTS; // cada Pix vale R$ 1,00 (um palpite)
     const symbolic = bolao.demo || !bolao.pix.key;
     const pix = symbolic ? DEMO_PIX : bolao.pix;
     const payload = pixPayload({ key: pix.key, name: pix.name, city: pix.city, cents: pay.cents, txid: `BOLAO${person.name}` });
-    const presets = [...new Set([due, 500, 1000].filter((c) => c > 0))];
     html += `
       <div class="pay-who">
         ${avatar(person)}<div><strong>${escapeHtml(person.name)}</strong>
-        <span>${due ? `deve ${money(due)} em ${monthLabel(ym).toLowerCase()}` : "está em dia: pagamento adiantado"}${row?.pending ? ` · ${icon("hourglass")}${money(row.pending)} aguardando` : ""}</span></div>
+        <span>${due ? `deve ${money(due)} em ${monthLabel(ym).toLowerCase()} (${due / GUESS_CENTS} ${due === GUESS_CENTS ? "Pix" : "Pix de R$ 1,00"})` : "está em dia: pagamento adiantado"}${row?.pending ? ` · ${icon("hourglass")}${money(row.pending)} aguardando` : ""}</span></div>
         <button class="link-btn" data-pay-pick="" type="button">Trocar</button>
       </div>
-      <div class="pay-amounts" role="group" aria-label="Valor">
-        ${presets.map((c) => `<button type="button" class="pay-chip ${!pay.custom && pay.cents === c ? "is-on" : ""}" data-pay-amount="${c}">${c === due ? `Tudo (${money(c)})` : money(c)}</button>`).join("")}
-        <button type="button" class="pay-chip ${pay.custom ? "is-on" : ""}" data-pay-amount="custom">Outro valor</button>
-      </div>
-      ${pay.custom ? `<form class="pay-custom" id="payCustomForm"><input id="payCustomValue" inputmode="decimal" autocomplete="off" placeholder="Valor (R$)" aria-label="Outro valor" value="${(pay.cents / 100).toFixed(2).replace(".", ",")}" /><button class="btn btn-ghost btn-sm" type="submit">Usar</button></form>` : ""}
+      <p class="pay-fixed">${icon("coin")}Cada Pix vale <b>${money(GUESS_CENTS)}</b>, o valor de um palpite.</p>
       <div class="pay-qr-wrap">
         <div class="pay-qr ${symbolic ? "is-symbolic" : ""}">${pixQrSvg(payload, `QR Code Pix de ${money(pay.cents)}`)}${symbolic ? `<span class="pay-qr-tag">SIMBÓLICO</span>` : ""}</div>
         <div class="pay-qr-info">
@@ -1037,32 +977,31 @@ async function bolaoAfterResult(day) {
 
 async function addPerson() {
   const name = $("#bolaoPersonName").value.trim().slice(0, 24);
-  const emoji = AVATAR_KEYS.includes(bolao.newAvatar) ? bolao.newAvatar : AVATAR_KEYS[0];
+  const color = AVATAR_COLORS.includes(bolao.newColor) ? bolao.newColor : AVATAR_COLORS[0];
   if (!name) return;
   if (bolao.participants.some((p) => p.name.toLowerCase() === name.toLowerCase())) { toast("Já existe um participante com esse nome."); return; }
-  const color = AVATAR_COLORS[bolao.participants.length % AVATAR_COLORS.length];
-  const ok = await bolaoWrite(() => backend().addParticipant({ name, emoji, color }), "Não foi possível adicionar.");
+  const ok = await bolaoWrite(() => backend().addParticipant({ name, color }), "Não foi possível adicionar.");
   if (ok) {
     $("#bolaoPersonName").value = "";
-    bolao.newAvatar = null; // o próximo recebe outro bichinho livre
+    bolao.newColor = null; // o próximo recebe outra cor livre
     bolao.avatarFor = null;
     toast(`${name} entrou no bolão`);
   }
   await refreshBolao();
 }
 
-// Abre/fecha a grade de avatares de um participante (ou do formulário de novo participante)
+// Abre/fecha a grade de cores de um participante (ou do formulário de novo participante)
 function toggleAvatarGrid(id) {
   bolao.avatarFor = bolao.avatarFor === id ? null : id;
   renderBolaoAdmin();
 }
 
-function pickAvatar(key) {
-  if (!AVATAR_KEYS.includes(key)) return;
+function pickColor(color) {
+  if (!AVATAR_COLORS.includes(color)) return;
   const id = bolao.avatarFor;
   bolao.avatarFor = null;
-  if (id === "new") { bolao.newAvatar = key; renderBolaoAdmin(); return; }
-  setPersonEmoji(id, key);
+  if (id === "new") { bolao.newColor = color; renderBolaoAdmin(); return; }
+  setPersonColor(id, color);
 }
 
 async function renamePerson(id) {
@@ -1074,9 +1013,9 @@ async function renamePerson(id) {
   if (ok) toast("Nome atualizado");
 }
 
-async function setPersonEmoji(id, emoji) {
-  if (!participantById(id) || !AVATAR_KEYS.includes(emoji)) return;
-  await bolaoWrite(() => backend().updateParticipant(id, { emoji }), "Não foi possível trocar o avatar.");
+async function setPersonColor(id, color) {
+  if (!participantById(id) || !AVATAR_COLORS.includes(color)) return;
+  await bolaoWrite(() => backend().updateParticipant(id, { color }), "Não foi possível trocar a cor.");
   await refreshBolao();
 }
 
@@ -1099,17 +1038,13 @@ async function togglePerson(id) {
 
 async function submitPayment() {
   const pid = $("#bolaoPayWho").value;
-  const cents = parseCents($("#bolaoPayValue").value);
+  const cents = GUESS_CENTS; // cada Pix vale um palpite
   if (!participantById(pid)) return;
-  if (!cents) { toast("Valor inválido. Ex.: 5,00"); return; }
   const ok = await bolaoWrite(
     () => backend().addPayment({ participant_id: pid, month: `${bolao.month}-01`, amount_cents: cents }),
     "Mês encerrado: não dá para registrar pagamentos.",
   );
-  if (ok) {
-    $("#bolaoPayValue").value = "";
-    toast(`Pagamento de ${money(cents)} de ${participantById(pid).name} registrado`);
-  }
+  if (ok) toast(`Pagamento de ${money(cents)} de ${participantById(pid).name} registrado`);
   await refreshBolao();
 }
 
@@ -1200,7 +1135,6 @@ async function closeBolaoMonth() {
 
 function moveBolaoMonth(delta) {
   bolao.month = clampMonth(shiftMonth(bolao.month, delta));
-  renderBolaoMonth();
   renderBolaoRank();
   renderBolaoAdmin();
 }
@@ -1216,7 +1150,7 @@ document.getElementById("bolao").addEventListener("click", (e) => {
   else if ((el = hit("[data-scope]"))) { bolao.scope = el.dataset.scope; renderBolaoRank(); }
   else if ((el = hit("[data-pay]"))) openPay(el.dataset.pay);
   else if ((el = hit("[data-avatar-edit]"))) toggleAvatarGrid(el.dataset.avatarEdit);
-  else if ((el = hit("[data-avatar-set]"))) pickAvatar(el.dataset.avatarSet);
+  else if ((el = hit("[data-color-set]"))) pickColor(el.dataset.colorSet);
   else if ((el = hit("[data-rename]"))) renamePerson(el.dataset.rename);
   else if ((el = hit("[data-toggle]"))) togglePerson(el.dataset.toggle);
   else if ((el = hit("[data-confirm-pay]"))) confirmPayment(el.dataset.confirmPay);
@@ -1243,26 +1177,12 @@ document.getElementById("payModal").addEventListener("click", (e) => {
   if (t === e.currentTarget || t.closest("[data-pay-close]")) closePay();
   else if ((el = t.closest("[data-pay-pick]"))) {
     pay.pid = el.dataset.payPick || null;
-    pay.cents = null;
-    pay.custom = false;
     if (pay.pid) rememberPlayer(pay.pid);
     renderPay();
-  } else if ((el = t.closest("[data-pay-amount]"))) {
-    pay.custom = el.dataset.payAmount === "custom";
-    if (!pay.custom) pay.cents = Number(el.dataset.payAmount);
-    renderPay();
-    if (pay.custom) document.getElementById("payCustomValue")?.focus();
   } else if (t.closest("[data-pay-copy]")) copyText(document.getElementById("payCode").value, "Pix copia e cola copiado");
   else if (t.closest("[data-pay-sent]")) paySent();
 });
 
-document.getElementById("payModal").addEventListener("submit", (e) => {
-  e.preventDefault();
-  const cents = parseCents(document.getElementById("payCustomValue")?.value);
-  if (!cents) { toast("Valor inválido. Ex.: 7,50"); return; }
-  pay.cents = cents;
-  renderPay();
-});
 
 document.getElementById("buyModal").addEventListener("click", (e) => {
   if (e.target === e.currentTarget || e.target.closest("[data-buy-close]")) closeBuy();
