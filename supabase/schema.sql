@@ -59,7 +59,7 @@ drop function if exists public.bolao_open_counts() cascade;
 create table if not exists public.bolao_participants (
   id          uuid primary key default gen_random_uuid(),
   name        text not null unique check (char_length(btrim(name)) between 1 and 24),
-  emoji       text not null default '🐿️' check (char_length(emoji) between 1 and 8),
+  emoji       text not null default 'chipmunk' check (char_length(emoji) between 1 and 8),  -- avatar: assets/emoji/<emoji>.png
   color       text not null default '#4f46e5' check (color ~ '^#[0-9a-fA-F]{6}$'),
   active      boolean not null default true,  -- sem exclusão: quem sai é desativado e o histórico fica
   created_at  timestamptz not null default now()
@@ -377,3 +377,13 @@ on conflict (key) do nothing;
 
 insert into public.bolao_config (id) values (true)
 on conflict (id) do nothing;
+
+-- Participantes do bolão (o avatar e a cor podem ser trocados pelo app)
+insert into public.bolao_participants (name, emoji, color) values
+  ('Stingnel',   'wolf',    '#4f46e5'),
+  ('Manito',     'fox',     '#f59e0b'),
+  ('Ortelas',    'owl',     '#a855f7'),
+  ('Balothalis', 'lion',    '#ef4444'),
+  ('Lolo',       'koala',   '#10b981'),
+  ('Gabriel',    'raccoon', '#0ea5e9')
+on conflict (name) do nothing;

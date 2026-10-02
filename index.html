@@ -72,6 +72,11 @@
     <header class="topbar">
       <div class="container topbar-inner">
         <div class="brand"><img class="brand-logo" src="assets/logo.webp" alt="" width="40" height="40" /><span>Esquilook</span></div>
+        <!-- Duas telas: calendário (#inicio) e bolão (#bolao) -->
+        <nav class="topnav" aria-label="Seções do site">
+          <a class="topnav-link" href="#inicio" data-view="inicio"><img src="assets/emoji/shirt.png" alt="" width="20" height="20" />Calendário</a>
+          <a class="topnav-link" href="#bolao" data-view="bolao"><img src="assets/emoji/target.png" alt="" width="20" height="20" />Bolão</a>
+        </nav>
         <div class="topbar-right">
           <span class="user-chip" id="userChip"></span>
           <button id="logoutBtn" class="btn btn-ghost btn-sm" type="button">Sair</button>
@@ -101,13 +106,24 @@
 
       <!-- Bolão do lanche (bolao.js) — sem as tabelas no banco, abre em modo demonstração -->
       <section class="panel bolao hidden" id="bolao">
-        <div class="panel-head">
-          <div>
-            <h2>🎯 Bolão do lanche</h2>
-            <p class="muted">R$ 1 por palpite, até o meio-dia. Quem acerta descansa no dia seguinte. O caixa paga o lanche e a sobra do mês vai para quem fizer mais pontos.</p>
+        <div class="bolao-hero">
+          <div class="bh-title">
+            <img class="bh-icon" src="assets/emoji/target.png" alt="" width="64" height="64" />
+            <div>
+              <h2>Bolão do lanche</h2>
+              <p id="bolaoHeroSub">Palpite a camisa do dia, junte o caixa do lanche e dispute a sobra do mês.</p>
+            </div>
           </div>
+          <ul class="bh-rules">
+            <li><img src="assets/emoji/coin.png" alt="" width="20" height="20" />R$ 1 por palpite</li>
+            <li><img src="assets/emoji/clock.png" alt="" width="20" height="20" />Fecha ao meio-dia</li>
+            <li><img src="assets/emoji/pause.png" alt="" width="20" height="20" />Quem acerta descansa</li>
+            <li><img src="assets/emoji/trophy.png" alt="" width="20" height="20" />Sobra vai pro campeão</li>
+          </ul>
+          <div class="bh-stats" id="bolaoHeroStats"></div>
         </div>
         <div class="bolao-demo hidden" id="bolaoDemo" role="status"></div>
+        <div class="bolao-wallet" id="bolaoWallet"></div>
         <div class="bolao-layout">
           <div class="bolao-guess" id="bolaoGuess"></div>
           <div class="bolao-month">
@@ -121,7 +137,7 @@
         </div>
         <div class="bolao-rank" id="bolaoRank"></div>
         <details class="bolao-admin" id="bolaoAdminBox">
-          <summary>⚙️ Participantes e caixa</summary>
+          <summary><img src="assets/emoji/gear.png" alt="" width="22" height="22" />Participantes e caixa</summary>
           <div id="bolaoAdmin"></div>
         </details>
       </section>
@@ -231,11 +247,36 @@
     </div>
   </div>
 
+  <!-- ============ MODAL: compra do lanche (desconta do saldo do caixa) ============ -->
+  <div id="buyModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="buyTitle">
+    <div class="modal-card buy-card">
+      <div class="modal-head">
+        <h3 id="buyTitle" class="pay-title"><img src="assets/emoji/receipt.png" alt="" width="28" height="28" />Compra do lanche</h3>
+        <button class="icon-btn" data-buy-close type="button" aria-label="Fechar">✕</button>
+      </div>
+      <form id="buyForm" class="form">
+        <label class="field">
+          <span>O que foi comprado</span>
+          <input id="buyDesc" type="text" maxlength="60" required autocomplete="off" placeholder="Ex.: pão de queijo e suco" />
+        </label>
+        <label class="field">
+          <span>Valor da compra</span>
+          <input id="buyValue" type="text" inputmode="decimal" required autocomplete="off" placeholder="R$ 0,00" />
+        </label>
+        <div class="buy-preview" id="buyPreview" aria-live="polite"></div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" data-buy-close type="button">Cancelar</button>
+          <button class="btn btn-primary" type="submit">Registrar compra</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- ============ MODAL: pagar o bolão (QR Code Pix) ============ -->
   <div id="payModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="payTitle">
     <div class="modal-card pay-card">
       <div class="modal-head">
-        <h3 id="payTitle">💳 Pagar o bolão</h3>
+        <h3 id="payTitle" class="pay-title"><img src="assets/emoji/card.png" alt="" width="28" height="28" />Pagar o bolão</h3>
         <button class="icon-btn" data-pay-close type="button" aria-label="Fechar">✕</button>
       </div>
       <div id="payBody"></div>

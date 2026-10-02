@@ -990,6 +990,24 @@ document.addEventListener("keydown", (e) => {
   closeConfirm(false);
 });
 
+/* ---------------- Telas: calendário e bolão ---------------- */
+
+// O bolão tem página própria (#bolao), aberta pelo link no topo
+function applyView() {
+  const bolaoView = location.hash === "#bolao";
+  $("#app").classList.toggle("view-bolao", bolaoView);
+  document.querySelectorAll("[data-view]").forEach((a) => {
+    const current = (a.dataset.view === "bolao") === bolaoView;
+    if (current) a.setAttribute("aria-current", "page");
+    else a.removeAttribute("aria-current");
+  });
+}
+window.addEventListener("hashchange", () => {
+  applyView();
+  window.scrollTo(0, 0);
+});
+applyView();
+
 /* ---------------- Init ---------------- */
 
 // Limpa a sessão da versão antiga (login local), que não vale mais

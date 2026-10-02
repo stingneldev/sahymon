@@ -20,9 +20,17 @@
 const GUESS_CENTS = 100;
 const GUESS_CUTOFF = "12:00"; // o mesmo horário de bolao_cutoff() no banco
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const AVATARS = ["🐿️", "🦊", "🐼", "🐸", "🦁", "🐯", "🐨", "🐵", "🦉", "🐙", "🦄", "🐢", "🐧", "🐻", "🐰", "🐶"];
+// Emojis 3D (Fluent Emoji, MIT) em assets/emoji/<chave>.png: avatares e ícones da seção
+const EMOJI_DIR = "assets/emoji/";
+const AVATARS = {
+  chipmunk: "Esquilo", fox: "Raposa", panda: "Panda", frog: "Sapo", lion: "Leão", tiger: "Tigre",
+  koala: "Coala", owl: "Coruja", unicorn: "Unicórnio", raccoon: "Guaxinim", wolf: "Lobo", hedgehog: "Ouriço",
+  sloth: "Preguiça", shark: "Tubarão", alien: "Alien", robot: "Robô",
+};
+const AVATAR_KEYS = Object.keys(AVATARS);
 const AVATAR_COLORS = ["#4f46e5", "#a855f7", "#ec4899", "#f59e0b", "#10b981", "#0ea5e9", "#ef4444", "#14b8a6"];
-const MEDALS = ["🥇", "🥈", "🥉"];
+const MEDALS = ["medal1", "medal2", "medal3"];
+const icon = (key, cls = "") => `<img class="ico ${cls}" src="${EMOJI_DIR}${key}.png" alt="" aria-hidden="true" />`;
 const KEY_PLAYER = "esquilook:bolao-jogador"; // último participante escolhido neste aparelho
 const DEMO_PIX = { key: "caixa-do-lanche@exemplo.com", name: "Caixa do lanche", city: "VITORIA" };
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -42,6 +50,9 @@ const bolao = {
   month: null,      // "YYYY-MM" do caixa e do ranking mensal
   scope: "month",   // ranking: "month" ou "all"
   picked: null,     // participante escolhido para palpitar
+  avatarFor: null,  // participante (ou "new") com a grade de avatares aberta
+  newAvatar: null,  // avatar escolhido para o próximo participante
+  openDetails: new Set(), // listas recolhíveis abertas (continuam abertas quando a tela se atualiza)
 };
 
 /* ---------------- Carregar ---------------- */
@@ -73,7 +84,7 @@ function applyBolao(d) {
     .map((p) => ({
       id: p.id,
       name: p.name.trim().slice(0, 24),
-      emoji: typeof p.emoji === "string" && p.emoji.length <= 8 ? p.emoji : AVATARS[0],
+      emoji: AVATAR_KEYS.includes(p.emoji) ? p.emoji : AVATAR_KEYS[0],
       color: COLOR_RE.test(p.color) ? p.color : AVATAR_COLORS[0],
       active: p.active !== false,
     }));
@@ -107,7 +118,11 @@ const backend = () => (bolao.demo ? demoApi : api);
 /* ---------------- Modo demonstração ---------------- */
 
 const demo = { data: null };
-const DEMO_PEOPLE = [["Gabriel", "🦊"], ["Lucas", "🐼"], ["Mari", "🐸"], ["Pedro", "🦁"], ["Julia", "🐨"]];
+// Os mesmos participantes que o schema.sql cadastra
+const DEMO_PEOPLE = [
+  ["Stingnel", "wolf", "#4f46e5"], ["Manito", "fox", "#f59e0b"], ["Ortelas", "owl", "#a855f7"],
+  ["Balothalis", "lion", "#ef4444"], ["Lolo", "koala", "#10b981"], ["Gabriel", "raccoon", "#0ea5e9"],
+];
 
 function demoId() {
   if (crypto.randomUUID) return crypto.randomUUID();
@@ -121,8 +136,8 @@ function makeDemo() {
   let seed = 20261001;
   const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   const shirts = state.shirts.map((s) => s.id);
-  const people = DEMO_PEOPLE.map(([name, emoji], i) => ({
-    id: `00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`, name, emoji, color: AVATAR_COLORS[i], active: true,
+  const people = DEMO_PEOPLE.map(([name, emoji, color], i) => ({
+    id: `00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`, name, emoji, color, active: true,
   }));
   const results = {};
   const guesses = [];
@@ -154,8 +169,10 @@ function makeDemo() {
   const month = `${monthOf(days.at(-1))}-01`;
   const at = (i) => new Date(Date.now() - i * 864e5).toISOString();
   const payments = [
-    { id: demoId(), participant_id: people[0].id, month, amount_cents: 500, confirmed: true, created_at: at(6) },
-    { id: demoId(), participant_id: people[1].id, month, amount_cents: 1000, confirmed: true, created_at: at(4) },
+    { id: demoId(), participant_id: people[0].id, month, amount_cents: 1000, confirmed: true, created_at: at(9) },
+    { id: demoId(), participant_id: people[1].id, month, amount_cents: 1200, confirmed: true, created_at: at(7) },
+    { id: demoId(), participant_id: people[2].id, month, amount_cents: 800, confirmed: true, created_at: at(5) },
+    { id: demoId(), participant_id: people[4].id, month, amount_cents: 900, confirmed: true, created_at: at(3) },
     { id: demoId(), participant_id: people[3].id, month, amount_cents: 300, confirmed: false, created_at: at(1) },
   ];
   const expenses = [
@@ -194,7 +211,7 @@ const demoApi = {
   async confirmPayment(id) { Object.assign(demo.data.payments.find((p) => p.id === id) ?? {}, { confirmed: true }); return [{}]; },
   async addExpense(row) { demo.data.expenses.push({ id: demoId(), created_at: new Date().toISOString(), ...row }); },
   async deleteExpense(id) { demo.data.expenses = demo.data.expenses.filter((x) => x.id !== id); return [{}]; },
-  async closeMonth(row) { demo.data.closures.push(row); },
+  async closeMonth(row) { demo.data.closures.push({ closed_at: new Date().toISOString(), ...row }); },
   async setPixConfig(patch) { Object.assign(demo.data.config, patch); return [{}]; },
 };
 
@@ -263,12 +280,12 @@ function guessStatus(g) {
 }
 
 const STATUS_INFO = {
-  hit: { icon: "✅", label: "acertou" },
-  miss: { icon: "❌", label: "errou" },
-  void: { icon: "⏸️", label: "anulado (acertou na véspera)" },
-  absent: { icon: "➖", label: "dia anulado (falta)" },
-  pending: { icon: "⏳", label: "aguardando a camisa" },
-  open: { icon: "🔒", label: "palpite guardado" },
+  hit: { icon: "check", label: "acertou" },
+  miss: { icon: "cross", label: "errou" },
+  void: { icon: "pause", label: "anulado (acertou na véspera)" },
+  absent: { icon: "minus", label: "dia anulado (falta)" },
+  pending: { icon: "hourglass", label: "aguardando a camisa" },
+  open: { icon: "lock", label: "palpite guardado" },
 };
 
 // Participante lembrado neste aparelho (cada um costuma usar o próprio celular)
@@ -338,11 +355,11 @@ function rankingFor(inPeriod) {
   const today = guessDay();
   now.list.forEach((r) => {
     r.badges = [];
-    if (top > 0 && r.hits === top) r.badges.push(["👑", "Líder em pontos"]);
-    if (bestRate > 0 && r.charged >= 3 && r.rate === bestRate) r.badges.push(["🎯", "Mira afiada: melhor aproveitamento"]);
-    if (mostPlayed >= 3 && r.charged === mostPlayed) r.badges.push(["🐿️", "Fiel ao bolão: mais palpites"]);
-    if (coldest >= 3 && r.coldStreak === coldest) r.badges.push(["🥶", `Pé-frio: ${r.coldStreak} erros seguidos`]);
-    if (today && isResting(r.p.id, today)) r.badges.push(["⏸️", "Acertou e descansa no próximo palpite"]);
+    if (top > 0 && r.hits === top) r.badges.push(["crown", "Líder em pontos"]);
+    if (bestRate > 0 && r.charged >= 3 && r.rate === bestRate) r.badges.push(["target", "Mira afiada: melhor aproveitamento"]);
+    if (mostPlayed >= 3 && r.charged === mostPlayed) r.badges.push(["chipmunk", "Fiel ao bolão: mais palpites"]);
+    if (coldest >= 3 && r.coldStreak === coldest) r.badges.push(["cold", `Pé-frio: ${r.coldStreak} erros seguidos`]);
+    if (today && isResting(r.p.id, today)) r.badges.push(["pause", "Acertou e descansa no próximo palpite"]);
   });
   return now;
 }
@@ -390,7 +407,8 @@ const firstMonth = () => {
 };
 const lastMonth = () => (monthOf(todayKey()) < monthKey(CAL_END) ? monthOf(todayKey()) : monthKey(CAL_END));
 const clampMonth = (ym) => (ym < firstMonth() ? firstMonth() : ym > lastMonth() ? lastMonth() : ym);
-const avatar = (p, cls = "") => `<span class="bp-avatar ${cls}" style="--c:${p.color}" aria-hidden="true">${escapeHtml(p.emoji)}</span>`;
+const avatar = (p, cls = "") =>
+  `<span class="bp-avatar ${cls}" style="--c:${p.color}" aria-hidden="true"><img src="${EMOJI_DIR}${p.emoji}.png" alt="" /></span>`;
 const bolaoNote = (html) => `<p class="bg-note">${html}</p>`;
 
 function renderBolao() {
@@ -399,17 +417,148 @@ function renderBolao() {
   if (bolao.demo) applyBolao(demoSnapshot());
   $("#bolaoDemo").classList.toggle("hidden", !bolao.demo);
   $("#bolaoDemo").innerHTML = bolao.demo
-    ? `<strong>👀 Modo demonstração</strong>
+    ? `<strong>${icon("eyes")}Modo demonstração</strong>
        <span>O bolão ainda não foi ativado no banco de dados. Participantes, palpites e pagamentos abaixo são
        de exemplo e nada é salvo: ao recarregar a página, tudo volta ao início. A camisa registrada no
        calendário é real e já entra no resultado.</span>`
     : "";
   bolao.month = clampMonth(bolao.month ?? monthOf(todayKey()));
+  renderBolaoHero();
+  renderBolaoWallet();
   renderBolaoGuess();
   renderBolaoMonth();
   renderBolaoRank();
   renderBolaoAdmin();
   if (!$("#payModal").classList.contains("hidden")) renderPay();
+  if (!$("#buyModal").classList.contains("hidden")) renderBuyPreview();
+}
+
+// Cabeçalho: bolão do dia, caixa do mês e líder do mês
+function renderBolaoHero() {
+  $("#bolaoHeroSub").textContent = `Palpite a camisa do ${state.friend}, junte o caixa do lanche e dispute a sobra do mês.`;
+  const day = guessDay();
+  const pot = day ? bolao.guesses.filter((g) => g.day === day).length * GUESS_CENTS : 0;
+  const ym = clampMonth(monthOf(todayKey()));
+  const cash = cashFor(ym);
+  const leader = rankingFor((d) => monthOf(d) === ym).list.find((r) => r.hits > 0);
+  $("#bolaoHeroStats").innerHTML = `
+    <div class="bh-stat">
+      <span>${day === todayKey() ? "Bolão de hoje" : "Próximo bolão"}</span>
+      <b>${money(pot)}</b>
+    </div>
+    <div class="bh-stat">
+      <span>Caixa de ${monthLabel(ym).split(" ")[0].toLowerCase()}</span>
+      <b>${money(cash.received)}</b>
+    </div>
+    <div class="bh-stat bh-leader">
+      <span>Líder do mês</span>
+      ${leader ? `<b title="${escapeHtml(leader.p.name)}">${avatar(leader.p, "is-sm")}<span class="bh-name">${escapeHtml(leader.p.name)}</span><small>${leader.hits} pts</small></b>` : "<b>—</b>"}
+    </div>`;
+}
+
+// Saldo do caixa desde o início: o que entrou (Pix confirmados) menos lanche e prêmios pagos
+function walletStats() {
+  const sum = (list, f) => list.reduce((a, x) => a + f(x), 0);
+  const confirmed = bolao.payments.filter((p) => p.confirmed);
+  const received = sum(confirmed, (p) => p.amount_cents);
+  const pending = sum(bolao.payments.filter((p) => !p.confirmed), (p) => p.amount_cents);
+  const snacks = sum(bolao.expenses, (x) => x.amount_cents);
+  const prizes = sum(bolao.closures, (c) => c.prize_cents);
+
+  const paidBy = new Map();
+  for (const p of confirmed) paidBy.set(p.participant_id, (paidBy.get(p.participant_id) ?? 0) + p.amount_cents);
+  const missing = sum(scoreboard(() => true).list, (r) => Math.max(0, r.charged * GUESS_CENTS - (paidBy.get(r.p.id) ?? 0)));
+
+  const moves = [
+    ...confirmed.map((p) => ({ at: p.created_at, cents: p.amount_cents, icon: "coin", label: `Pix de ${participantById(p.participant_id)?.name ?? "?"}` })),
+    ...bolao.expenses.map((x) => ({ at: x.created_at, cents: -x.amount_cents, icon: "receipt", label: x.description })),
+    ...bolao.closures.filter((c) => c.prize_cents > 0).map((c) => ({
+      at: c.closed_at ?? c.month, cents: -c.prize_cents, icon: "trophy",
+      label: `Prêmio de ${monthLabel(monthOf(c.month)).toLowerCase()}${c.winners ? ` · ${c.winners}` : ""}`,
+    })),
+  ].sort((a, b) => String(b.at).localeCompare(String(a.at)));
+
+  return { received, pending, snacks, prizes, missing, moves, balance: received - snacks - prizes };
+}
+
+function renderBolaoWallet() {
+  const w = walletStats();
+  const signed = (c) => `${c < 0 ? "−" : "+"}${money(Math.abs(c))}`;
+  const when = (at) => formatDate(toKey(new Date(at)), { day: "2-digit", month: "2-digit" });
+  $("#bolaoWallet").innerHTML = `
+    <div class="bw-card">
+      <div class="bw-main">
+        ${icon("moneybag", "bw-icon")}
+        <div class="bw-text">
+          <span class="bw-label">Saldo do caixa</span>
+          <strong class="bw-value ${w.balance < 0 ? "is-neg" : ""}">${money(w.balance)}</strong>
+          <span class="bw-hint">Saldo fictício controlado pelo app: o dinheiro de verdade fica na conta Pix do caixa.</span>
+        </div>
+      </div>
+      <ul class="bw-flow">
+        <li><span>Entrou</span><b class="${w.received ? "is-in" : ""}">${w.received ? signed(w.received) : money(0)}</b></li>
+        <li><span>Lanche</span><b class="${w.snacks ? "is-out" : ""}">${w.snacks ? signed(-w.snacks) : money(0)}</b></li>
+        <li title="Prêmios pagos nos meses encerrados"><span>Prêmios</span><b class="${w.prizes ? "is-out" : ""}">${w.prizes ? signed(-w.prizes) : money(0)}</b></li>
+        <li title="Palpites que ainda não foram pagos"><span>A receber</span><b>${money(w.missing)}</b></li>
+        ${w.pending ? `<li title="Pix informados que o caixa ainda não confirmou"><span>A confirmar</span><b>${money(w.pending)}</b></li>` : ""}
+      </ul>
+      <div class="bw-actions">
+        <button class="btn btn-primary" id="bolaoBuyOpen" type="button">${icon("receipt")}Registrar compra do lanche</button>
+        ${activeParticipants().length ? `<button class="btn btn-ghost" id="bolaoPayOpen" type="button">${icon("card")}Pagar com Pix</button>` : ""}
+      </div>
+    </div>
+    ${w.moves.length ? `
+    <details class="bw-moves" data-keep="moves" ${bolao.openDetails.has("moves") ? "open" : ""}>
+      <summary>Extrato do caixa (${w.moves.length})</summary>
+      <ul>${w.moves.slice(0, 40).map((m) => `
+        <li>${icon(m.icon)}<span class="bw-move-label">${escapeHtml(m.label)}</span><time>${when(m.at)}</time>
+          <b class="${m.cents < 0 ? "is-out" : "is-in"}">${signed(m.cents)}</b></li>`).join("")}
+      </ul>
+    </details>` : ""}`;
+}
+
+/* ---------------- Compra do lanche ---------------- */
+
+function openBuy() {
+  $("#buyForm").reset();
+  renderBuyPreview();
+  $("#buyModal").classList.remove("hidden");
+  syncModalLock();
+  if (matchMedia("(hover: hover)").matches) setTimeout(() => $("#buyDesc").focus(), 50);
+}
+
+function closeBuy() {
+  if ($("#buyModal").classList.contains("hidden")) return;
+  $("#buyModal").classList.add("hidden");
+  syncModalLock();
+}
+
+// Mostra como o saldo fica depois da compra, enquanto o valor é digitado
+function renderBuyPreview() {
+  const { balance } = walletStats();
+  const cents = parseCents($("#buyValue").value);
+  const after = balance - (cents ?? 0);
+  $("#buyPreview").innerHTML = `
+    <div><span>Saldo agora</span><b>${money(balance)}</b></div>
+    <span class="buy-arrow" aria-hidden="true">→</span>
+    <div><span>Depois da compra</span><b class="${cents && after < 0 ? "is-neg" : ""}">${cents ? money(after) : "—"}</b></div>
+    ${cents && after < 0 ? `<p class="buy-warn">O saldo vai ficar negativo: faltam ${money(-after)} no caixa.</p>` : ""}`;
+}
+
+async function submitBuy() {
+  const description = $("#buyDesc").value.trim().slice(0, 60);
+  const cents = parseCents($("#buyValue").value);
+  if (!description) return;
+  if (!cents) { toast("Valor inválido. Ex.: 23,90"); return; }
+  const ym = payMonth();
+  const ok = await bolaoWrite(
+    () => backend().addExpense({ month: `${ym}-01`, description, amount_cents: cents }),
+    "Mês encerrado: não dá para registrar compras.",
+  );
+  if (!ok) return;
+  closeBuy();
+  await refreshBolao();
+  toast(`Compra registrada. Saldo do caixa: ${money(walletStats().balance)}`);
 }
 
 function renderBolaoGuess() {
@@ -432,12 +581,12 @@ function renderBolaoGuess() {
       <div class="bg-head">
         <span class="bg-eyebrow">${isToday ? "Palpite de hoje" : "Próximo palpite"}</span>
         <strong class="bg-day">${formatDate(day)}</strong>
-        <span class="bg-meta">⏰ Fecha ao meio-dia${isToday ? ` · ${timeLeft(day)}` : ""} · ${done.length} de ${people.length - resting.length} já palpitaram</span>
-        <span class="bg-pot">💰 Bolão do dia: <b>${money(pot * GUESS_CENTS)}</b> em ${pot} ${pot === 1 ? "palpite" : "palpites"}</span>
+        <span class="bg-meta">${icon("clock")}Fecha ao meio-dia${isToday ? ` · ${timeLeft(day)}` : ""} · ${done.length} de ${people.length - resting.length} já palpitaram</span>
+        <span class="bg-pot">${icon("moneybag")}Bolão do dia: <b>${money(pot * GUESS_CENTS)}</b> em ${pot} ${pot === 1 ? "palpite" : "palpites"}</span>
       </div>`;
 
     if (!people.length) {
-      html += bolaoNote("Cadastre os participantes em <b>⚙️ Participantes e caixa</b>, no fim desta seção.");
+      html += bolaoNote("Cadastre os participantes em <b>Participantes e caixa</b>, no fim desta seção.");
     } else {
       html += `<p class="bg-step"><span>1</span>Quem vai palpitar?</p>
         <div class="bg-people">` + people.map((p) => {
@@ -447,7 +596,7 @@ function renderBolaoGuess() {
           return `
             <button class="bg-person ${p.id === bolao.picked ? "is-picked" : ""} ${did ? "is-done" : ""} ${rest ? "is-resting" : ""}"
                     data-person="${p.id}" type="button" ${did || rest ? "disabled" : ""} aria-pressed="${p.id === bolao.picked}" title="${title}">
-              ${avatar(p)}<span class="bg-person-name">${escapeHtml(p.name)}</span>${did ? `<i>✓</i>` : rest ? `<i>⏸️</i>` : ""}
+              ${avatar(p)}<span class="bg-person-name">${escapeHtml(p.name)}</span>${did ? icon("check", "is-tag") : rest ? icon("pause", "is-tag") : ""}
             </button>`;
         }).join("") + `</div>`;
 
@@ -457,7 +606,7 @@ function renderBolaoGuess() {
             <span class="bg-media">${shirtMedia(s)}</span>
             <span class="bg-name" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</span>
           </button>`).join("") + `</div>
-        <p class="bg-rule">🔒 Cada palpite vale ${money(GUESS_CENTS)} e é definitivo: não dá para trocar nem excluir.</p>`;
+        <p class="bg-rule">${icon("lock")}Cada palpite vale ${money(GUESS_CENTS)} e é definitivo: não dá para trocar nem excluir.</p>`;
     }
   }
 
@@ -472,7 +621,7 @@ function renderReveal() {
   const shirt = result && result !== ABSENT ? shirtById(result) : null;
   const status = result === ABSENT ? "Faltou: dia anulado"
     : shirt ? `Veio de <b>${escapeHtml(shirt.name)}</b>`
-    : "Camisa ainda não registrada";
+    : `Camisa ainda não registrada · <a href="#inicio">registrar no calendário</a>`;
   const order = { hit: 0, miss: 1, void: 2, absent: 3, pending: 4, open: 5 };
   const list = bolao.guesses
     .filter((g) => g.day === day)
@@ -487,7 +636,7 @@ function renderReveal() {
       ${avatar(p, "is-sm")}
       <span class="bg-who">${escapeHtml(p.name)}</span>
       <span class="bg-what">${escapeHtml(shirtById(g.shirt_id)?.name ?? "—")}</span>
-      <span class="bg-mark" title="${STATUS_INFO[st].label}">${STATUS_INFO[st].icon}</span>
+      <span class="bg-mark" title="${STATUS_INFO[st].label}">${icon(STATUS_INFO[st].icon)}</span>
     </li>`).join("");
 
   return `
@@ -497,8 +646,8 @@ function renderReveal() {
         <span class="muted">${status}</span>
       </div>
       ${list.length ? `<ul>${rows}</ul>` : `<p class="muted">Ninguém palpitou nesse dia.</p>`}
-      ${charged ? `<p class="bg-rested">💰 ${charged} ${charged === 1 ? "palpite valeu" : "palpites valeram"} ${money(charged * GUESS_CENTS)} para o caixa</p>` : ""}
-      ${rested.length ? `<p class="bg-rested">⏸️ Descansou (acertou na véspera): ${rested.map((p) => escapeHtml(p.name)).join(", ")}</p>` : ""}
+      ${charged ? `<p class="bg-rested">${icon("coin")}${charged} ${charged === 1 ? "palpite valeu" : "palpites valeram"} ${money(charged * GUESS_CENTS)} para o caixa</p>` : ""}
+      ${rested.length ? `<p class="bg-rested">${icon("pause")}Descansou (acertou na véspera): ${rested.map((p) => escapeHtml(p.name)).join(", ")}</p>` : ""}
     </div>`;
 }
 
@@ -513,7 +662,7 @@ function renderBolaoMonth() {
   let html = "";
   if (closure) {
     html += `
-      <div class="bm-closed"><span aria-hidden="true">🏆</span><div><strong>Mês encerrado</strong>
+      <div class="bm-closed">${icon("trophy", "is-lg")}<div><strong>Mês encerrado</strong>
         <span>${closure.winners
           ? `Prêmio de ${money(closure.prize_cents)} para ${escapeHtml(closure.winners)}`
           : `Ninguém pontuou: a sobra de ${money(closure.prize_cents)} fica com o grupo`}</span></div></div>`;
@@ -527,25 +676,21 @@ function renderBolaoMonth() {
     </div>
     <p class="bm-note muted">${cash.expected ? `${money(cash.expected)} em palpites valendo` : "Nenhum palpite valendo ainda"}${cash.missing ? ` · faltam ${money(cash.missing)} a receber` : ""}${cash.pending ? ` · ${money(cash.pending)} aguardando confirmação` : ""}</p>`;
 
-  if (!closure && activeParticipants().length) {
-    html += `<button class="btn btn-primary btn-block bm-pay" id="bolaoPayOpen" type="button">💳 Pagar com Pix</button>`;
-  }
-
   const debtors = cash.people.filter((r) => r.owed > 0).sort((a, b) => b.owed - a.owed);
   if (debtors.length) {
     html += `<div class="bm-debts"><span class="bm-label">A pagar · toque para pagar</span>` +
       debtors.map((r) => `
         <button class="bm-debt" data-pay="${r.p.id}" type="button" ${closure ? "disabled" : ""}>
-          ${avatar(r.p, "is-xs")}${escapeHtml(r.p.name)} <b>${money(r.owed)}</b>${r.pending ? ` <small>⏳ ${money(r.pending)}</small>` : ""}
+          ${avatar(r.p, "is-xs")}${escapeHtml(r.p.name)} <b>${money(r.owed)}</b>${r.pending ? ` <small>${icon("hourglass")}${money(r.pending)}</small>` : ""}
         </button>`).join("") + `</div>`;
   } else if (cash.expected) {
-    html += `<p class="bm-paid">✅ Todo mundo em dia</p>`;
+    html += `<p class="bm-paid">${icon("check")}Todo mundo em dia</p>`;
   }
 
   const expenses = bolao.expenses.filter((x) => monthOf(x.month) === ym);
   if (expenses.length) {
     html += `
-      <details class="bm-expenses">
+      <details class="bm-expenses" data-keep="expenses" ${bolao.openDetails.has("expenses") ? "open" : ""}>
         <summary>Gastos com lanche (${expenses.length})</summary>
         <ul>${expenses.map((x) => `<li><span>${escapeHtml(x.description)}</span><b>${money(x.amount_cents)}</b></li>`).join("")}</ul>
       </details>`;
@@ -562,7 +707,7 @@ function renderBolaoRank() {
 
   let html = `
     <div class="br-head">
-      <h3>🏆 Ranking</h3>
+      <h3>${icon("trophy")}Ranking</h3>
       <div class="br-tabs" role="tablist" aria-label="Período do ranking">
         <button type="button" role="tab" data-scope="month" aria-selected="${monthly}">${monthLabel(ym).split(" ")[0]}</button>
         <button type="button" role="tab" data-scope="all" aria-selected="${!monthly}">Geral</button>
@@ -571,7 +716,7 @@ function renderBolaoRank() {
 
   if (!played.length) {
     $("#bolaoRank").innerHTML = html + `
-      <div class="rank-empty"><span class="rank-empty-icon">🏆</span><p>Ranking vazio por enquanto.</p>
+      <div class="rank-empty"><span class="rank-empty-icon">${icon("trophy", "is-xl")}</span><p>Ranking vazio por enquanto.</p>
         <span class="muted">Os pontos aparecem quando a camisa de um dia com palpites for registrada.</span></div>`;
     return;
   }
@@ -584,18 +729,18 @@ function renderBolaoRank() {
       ${avatar(r.p, "is-lg")}
       <strong>${escapeHtml(r.p.name)}</strong>
       <span class="br-step-pts"><b>${r.hits}</b> ${r.hits === 1 ? "ponto" : "pontos"}</span>
-      <div class="br-block"><span>${MEDALS[Math.min(r.pos, 3) - 1]}</span><small>${pct(r.rate)} de acerto</small></div>
+      <div class="br-block">${icon(MEDALS[Math.min(r.pos, 3) - 1], "is-medal")}<small>${pct(r.rate)} de acerto</small></div>
     </div>`).join("") + `</div>`;
 
   const move = (m) => (m > 0 ? `<small class="br-move up" title="Subiu ${m}">▲${m}</small>`
     : m < 0 ? `<small class="br-move down" title="Caiu ${-m}">▼${-m}</small>` : "");
   html += `<ol class="br-list">` + rk.list.map((r) => `
-    <li class="br-row ${r.badges.some((b) => b[0] === "👑") ? "is-lead" : ""} ${r.charged ? "" : "is-idle"}">
+    <li class="br-row ${r.badges.some((b) => b[0] === "crown") ? "is-lead" : ""} ${r.charged ? "" : "is-idle"}">
       <span class="br-pos">${r.pos}º${move(r.move ?? 0)}</span>
       ${avatar(r.p)}
       <div class="br-main">
         <div class="br-name">${escapeHtml(r.p.name)}
-          ${r.badges.map(([icon, label]) => `<span class="br-badge" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">${icon}</span>`).join("")}
+          ${r.badges.map(([key, label]) => `<span class="br-badge" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">${icon(key)}</span>`).join("")}
         </div>
         <div class="br-bar" aria-hidden="true"><div style="width:${Math.round(r.rate * 100)}%;background:${r.p.color}"></div></div>
         <div class="br-sub">${r.hits} de ${r.charged} ${r.charged === 1 ? "palpite" : "palpites"} · ${pct(r.rate)}${r.voids ? ` · ${r.voids} anulado${r.voids > 1 ? "s" : ""}` : ""}</div>
@@ -606,7 +751,7 @@ function renderBolaoRank() {
     <p class="br-legend">
       <span><i class="dot-hit"></i>acerto</span><span><i class="dot-miss"></i>erro</span>
       <span><i class="dot-void"></i>anulado</span><span><i class="dot-absent"></i>falta</span>
-      <span>👑 líder · 🎯 mira afiada · 🐿️ fiel · 🥶 pé-frio · ⏸️ descansando</span>
+      <span>${icon("crown")}líder</span><span>${icon("target")}mira afiada</span><span>${icon("chipmunk")}fiel</span><span>${icon("cold")}pé-frio</span><span>${icon("pause")}descansando</span>
     </p>`;
 
   $("#bolaoRank").innerHTML = html;
@@ -627,23 +772,38 @@ function renderBolaoAdmin() {
   const canClose = !closed && ym < monthOf(todayKey());
   const del = (attr, id, label) => (closed ? "" : `<button class="icon-btn" ${attr}="${id}" type="button" aria-label="${label}" title="${label}">✕</button>`);
   const shortDay = (iso) => formatDate(toKey(new Date(iso)), { day: "2-digit", month: "2-digit" });
-  const emojiOptions = (current) => AVATARS.map((e) => `<option ${e === current ? "selected" : ""}>${e}</option>`).join("");
+  // Grade de avatares: abre embaixo de quem está trocando (ou do formulário de novo participante)
+  const used = new Set(bolao.participants.map((p) => p.emoji));
+  bolao.newAvatar ??= AVATAR_KEYS.find((k) => !used.has(k)) ?? AVATAR_KEYS[0];
+  const avatarGrid = (current, label) => `
+    <div class="ba-avatars" role="group" aria-label="${label}">${AVATAR_KEYS.map((k) => `
+      <button type="button" class="ba-av ${k === current ? "is-on" : ""}" data-avatar-set="${k}" title="${AVATARS[k]}" aria-pressed="${k === current}">
+        <img src="${EMOJI_DIR}${k}.png" alt="${AVATARS[k]}" />
+      </button>`).join("")}
+    </div>`;
+  const avatarBtn = (p, id) => `
+    <button class="ba-avatar-btn" data-avatar-edit="${id}" type="button" aria-expanded="${bolao.avatarFor === id}"
+            title="Trocar avatar" aria-label="Trocar avatar${p.name ? ` de ${escapeHtml(p.name)}` : ""}">${avatar(p)}</button>`;
 
   el.innerHTML = `
     <div class="ba-block">
       <span class="ba-title">Participantes</span>
       <ul class="ba-people">${bolao.participants.map((p) => `
-        <li class="${p.active ? "" : "is-off"}">
-          <select class="ba-emoji" data-emoji="${p.id}" aria-label="Avatar de ${escapeHtml(p.name)}">${emojiOptions(p.emoji)}</select>
-          <span class="ba-pname">${escapeHtml(p.name)}${p.active ? "" : " <small>(fora do bolão)</small>"}</span>
-          <button class="btn btn-ghost btn-sm" data-rename="${p.id}" type="button">Renomear</button>
-          <button class="btn btn-ghost btn-sm" data-toggle="${p.id}" type="button">${p.active ? "Tirar" : "Voltar"}</button>
+        <li class="${p.active ? "" : "is-off"} ${bolao.avatarFor === p.id ? "is-editing" : ""}">
+          <div class="ba-person-row">
+            ${avatarBtn(p, p.id)}
+            <span class="ba-pname">${escapeHtml(p.name)}${p.active ? "" : " <small>(fora do bolão)</small>"}</span>
+            <button class="btn btn-ghost btn-sm" data-rename="${p.id}" type="button">Renomear</button>
+            <button class="btn btn-ghost btn-sm" data-toggle="${p.id}" type="button">${p.active ? "Tirar" : "Voltar"}</button>
+          </div>
+          ${bolao.avatarFor === p.id ? avatarGrid(p.emoji, `Avatar de ${escapeHtml(p.name)}`) : ""}
         </li>`).join("")}
       </ul>
-      <form class="ba-form" id="bolaoPersonForm">
-        <select id="bolaoPersonEmoji" class="ba-emoji" aria-label="Avatar">${emojiOptions(AVATARS[bolao.participants.length % AVATARS.length])}</select>
+      <form class="ba-form ba-new" id="bolaoPersonForm">
+        ${avatarBtn({ name: "", emoji: bolao.newAvatar, color: AVATAR_COLORS[bolao.participants.length % AVATAR_COLORS.length] }, "new")}
         <input id="bolaoPersonName" maxlength="24" autocomplete="off" placeholder="Nome do participante" aria-label="Nome do participante" required />
         <button class="btn btn-primary btn-sm" type="submit">Adicionar</button>
+        ${bolao.avatarFor === "new" ? avatarGrid(bolao.newAvatar, "Avatar do novo participante") : ""}
       </form>
     </div>
 
@@ -687,7 +847,7 @@ function renderBolaoAdmin() {
           <span class="ba-sub">Pagamentos (${pays.length})</span>
           ${pays.length ? `<ul>${pays.map((p) => `
             <li class="${p.confirmed ? "" : "is-pending"}">
-              <span>${p.confirmed ? "" : "⏳ "}${escapeHtml(participantById(p.participant_id)?.name ?? "?")} · ${shortDay(p.created_at)}</span>
+              <span>${p.confirmed ? "" : icon("hourglass")}${escapeHtml(participantById(p.participant_id)?.name ?? "?")} · ${shortDay(p.created_at)}</span>
               <b>${money(p.amount_cents)}</b>
               ${!p.confirmed && !closed ? `<button class="btn btn-ghost btn-sm" data-confirm-pay="${p.id}" type="button">Confirmar</button>` : ""}
               ${del("data-del-pay", p.id, "Apagar pagamento")}
@@ -739,9 +899,9 @@ function renderPay() {
   if (pay.sent) {
     html += `
       <div class="pay-done">
-        <span class="pay-done-icon">✅</span>
+        ${icon("party", "pay-done-icon")}
         <strong>Pagamento de ${money(pay.sent.cents)} informado!</strong>
-        <p>Agora o caixa confere o extrato e confirma. Até lá, aparece como ⏳ aguardando confirmação.</p>
+        <p>Agora o caixa confere o extrato e confirma. Até lá, aparece como aguardando confirmação.</p>
         <button class="btn btn-primary" data-pay-close type="button">Fechar</button>
       </div>`;
   } else if (!person) {
@@ -763,7 +923,7 @@ function renderPay() {
     html += `
       <div class="pay-who">
         ${avatar(person)}<div><strong>${escapeHtml(person.name)}</strong>
-        <span>${due ? `deve ${money(due)} em ${monthLabel(ym).toLowerCase()}` : "está em dia: pagamento adiantado"}${row?.pending ? ` · ⏳ ${money(row.pending)} aguardando` : ""}</span></div>
+        <span>${due ? `deve ${money(due)} em ${monthLabel(ym).toLowerCase()}` : "está em dia: pagamento adiantado"}${row?.pending ? ` · ${icon("hourglass")}${money(row.pending)} aguardando` : ""}</span></div>
         <button class="link-btn" data-pay-pick="" type="button">Trocar</button>
       </div>
       <div class="pay-amounts" role="group" aria-label="Valor">
@@ -776,7 +936,7 @@ function renderPay() {
         <div class="pay-qr-info">
           <span class="pay-value">${money(pay.cents)}</span>
           <span class="muted">para ${escapeHtml(pix.name || "o caixa do lanche")}</span>
-          ${symbolic ? `<p class="pay-warn">${bolao.demo ? "Demonstração: este QR Code é só de exemplo." : "Cadastre a chave Pix do caixa em ⚙️ Participantes e caixa para este QR Code virar um Pix de verdade."} Não pague por ele.</p>` : ""}
+          ${symbolic ? `<p class="pay-warn">${bolao.demo ? "Demonstração: este QR Code é só de exemplo." : "Cadastre a chave Pix do caixa em Participantes e caixa para este QR Code virar um Pix de verdade."} Não pague por ele.</p>` : ""}
         </div>
       </div>
       <label class="pay-copy">
@@ -788,7 +948,7 @@ function renderPay() {
         <li>Confira o valor e o nome de quem recebe.</li>
         <li>Volte aqui e toque em <b>Já fiz o Pix</b>.</li>
       </ol>
-      <button class="btn btn-primary btn-block" data-pay-sent type="button">✅ Já fiz o Pix</button>`;
+      <button class="btn btn-primary btn-block" data-pay-sent type="button">${icon("check")}Já fiz o Pix</button>`;
   }
   $("#payBody").innerHTML = html;
 }
@@ -857,7 +1017,7 @@ async function placeGuess(shirtId) {
   const done = await bolaoWrite(() => backend().placeGuess(day, person.id, shirtId), "Não foi possível registrar o palpite.");
   if (done) bolao.picked = null;
   await refreshBolao();
-  if (done) toast(`🎯 Palpite de ${person.name} registrado!`);
+  if (done) toast(`Palpite de ${person.name} registrado!`);
 }
 
 // Chamado pelo app.js quando a camisa (ou a falta) do dia é registrada no calendário:
@@ -871,19 +1031,38 @@ async function bolaoAfterResult(day) {
   const hits = list.filter((g) => guessStatus(g) === "hit").map((g) => participantById(g.participant_id)?.name).filter(Boolean);
   const charged = list.filter((g) => ["hit", "miss"].includes(guessStatus(g))).length;
   toast(hits.length
-    ? `🎯 Acertou: ${hits.join(", ")}! +${money(charged * GUESS_CENTS)} no caixa`
-    : `Ninguém acertou hoje 🙈 +${money(charged * GUESS_CENTS)} no caixa`);
+    ? `Acertou: ${hits.join(", ")}! +${money(charged * GUESS_CENTS)} no caixa`
+    : `Ninguém acertou hoje. +${money(charged * GUESS_CENTS)} no caixa`);
 }
 
 async function addPerson() {
   const name = $("#bolaoPersonName").value.trim().slice(0, 24);
-  const emoji = AVATARS.includes($("#bolaoPersonEmoji").value) ? $("#bolaoPersonEmoji").value : AVATARS[0];
+  const emoji = AVATAR_KEYS.includes(bolao.newAvatar) ? bolao.newAvatar : AVATAR_KEYS[0];
   if (!name) return;
   if (bolao.participants.some((p) => p.name.toLowerCase() === name.toLowerCase())) { toast("Já existe um participante com esse nome."); return; }
   const color = AVATAR_COLORS[bolao.participants.length % AVATAR_COLORS.length];
   const ok = await bolaoWrite(() => backend().addParticipant({ name, emoji, color }), "Não foi possível adicionar.");
-  if (ok) { $("#bolaoPersonName").value = ""; toast(`${emoji} ${name} entrou no bolão`); }
+  if (ok) {
+    $("#bolaoPersonName").value = "";
+    bolao.newAvatar = null; // o próximo recebe outro bichinho livre
+    bolao.avatarFor = null;
+    toast(`${name} entrou no bolão`);
+  }
   await refreshBolao();
+}
+
+// Abre/fecha a grade de avatares de um participante (ou do formulário de novo participante)
+function toggleAvatarGrid(id) {
+  bolao.avatarFor = bolao.avatarFor === id ? null : id;
+  renderBolaoAdmin();
+}
+
+function pickAvatar(key) {
+  if (!AVATAR_KEYS.includes(key)) return;
+  const id = bolao.avatarFor;
+  bolao.avatarFor = null;
+  if (id === "new") { bolao.newAvatar = key; renderBolaoAdmin(); return; }
+  setPersonEmoji(id, key);
 }
 
 async function renamePerson(id) {
@@ -896,7 +1075,7 @@ async function renamePerson(id) {
 }
 
 async function setPersonEmoji(id, emoji) {
-  if (!participantById(id) || !AVATARS.includes(emoji)) return;
+  if (!participantById(id) || !AVATAR_KEYS.includes(emoji)) return;
   await bolaoWrite(() => backend().updateParticipant(id, { emoji }), "Não foi possível trocar o avatar.");
   await refreshBolao();
 }
@@ -946,7 +1125,7 @@ async function confirmPayment(id) {
   if (!ok) return;
   const done = await bolaoWrite(() => backend().confirmPayment(id), "Não foi possível confirmar: o mês pode ter sido encerrado.");
   await refreshBolao();
-  if (done) toast(`✅ Pagamento de ${name} confirmado`);
+  if (done) toast(`Pagamento de ${name} confirmado`);
 }
 
 async function submitExpense() {
@@ -1016,7 +1195,7 @@ async function closeBolaoMonth() {
     "Só dá para encerrar um mês depois que ele termina.",
   );
   await refreshBolao();
-  if (done) toast("🏆 Mês encerrado");
+  if (done) toast("Mês encerrado");
 }
 
 function moveBolaoMonth(delta) {
@@ -1036,20 +1215,18 @@ document.getElementById("bolao").addEventListener("click", (e) => {
   else if ((el = hit("[data-guess]"))) placeGuess(el.dataset.guess);
   else if ((el = hit("[data-scope]"))) { bolao.scope = el.dataset.scope; renderBolaoRank(); }
   else if ((el = hit("[data-pay]"))) openPay(el.dataset.pay);
+  else if ((el = hit("[data-avatar-edit]"))) toggleAvatarGrid(el.dataset.avatarEdit);
+  else if ((el = hit("[data-avatar-set]"))) pickAvatar(el.dataset.avatarSet);
   else if ((el = hit("[data-rename]"))) renamePerson(el.dataset.rename);
   else if ((el = hit("[data-toggle]"))) togglePerson(el.dataset.toggle);
   else if ((el = hit("[data-confirm-pay]"))) confirmPayment(el.dataset.confirmPay);
   else if ((el = hit("[data-del-pay]"))) deleteMoneyRow("pay", el.dataset.delPay);
   else if ((el = hit("[data-del-exp]"))) deleteMoneyRow("exp", el.dataset.delExp);
   else if (hit("#bolaoPayOpen")) openPay();
+  else if (hit("#bolaoBuyOpen")) openBuy();
   else if (hit("#bolaoPrev")) moveBolaoMonth(-1);
   else if (hit("#bolaoNext")) moveBolaoMonth(1);
   else if (hit("#bolaoClose")) closeBolaoMonth();
-});
-
-document.getElementById("bolao").addEventListener("change", (e) => {
-  const sel = e.target.closest("[data-emoji]");
-  if (sel) setPersonEmoji(sel.dataset.emoji, sel.value);
 });
 
 document.getElementById("bolao").addEventListener("submit", (e) => {
@@ -1087,4 +1264,25 @@ document.getElementById("payModal").addEventListener("submit", (e) => {
   renderPay();
 });
 
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePay(); });
+document.getElementById("buyModal").addEventListener("click", (e) => {
+  if (e.target === e.currentTarget || e.target.closest("[data-buy-close]")) closeBuy();
+});
+document.getElementById("buyValue").addEventListener("input", renderBuyPreview);
+document.getElementById("buyForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  submitBuy();
+});
+
+// Listas recolhíveis lembram se estavam abertas ("toggle" não borbulha: escuta na captura)
+document.getElementById("bolao").addEventListener("toggle", (e) => {
+  const key = e.target.dataset?.keep;
+  if (!key) return;
+  if (e.target.open) bolao.openDetails.add(key);
+  else bolao.openDetails.delete(key);
+}, true);
+
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  closePay();
+  closeBuy();
+});

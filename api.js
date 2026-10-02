@@ -209,7 +209,7 @@ const api = {
       this.request("/rest/v1/rpc/bolao_guess_list"),
       this.request("/rest/v1/bolao_payments?select=id,participant_id,month,amount_cents,confirmed,created_at&order=created_at.asc"),
       this.request("/rest/v1/bolao_expenses?select=id,month,description,amount_cents,created_at&order=created_at.asc"),
-      this.request("/rest/v1/bolao_closures?select=month,prize_cents,winners"),
+      this.request("/rest/v1/bolao_closures?select=month,prize_cents,winners,closed_at"),
       this.request("/rest/v1/bolao_config?select=pix_key,pix_name,pix_city"),
     ]);
     return { participants, guesses, payments, expenses, closures, config: config?.[0] };
