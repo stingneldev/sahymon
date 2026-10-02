@@ -12,12 +12,14 @@
      pontos (empate divide).
    - Pagamento por Pix (QR Code / copia e cola): quem paga informa e o caixa
      confirma depois de conferir o extrato.
-   Sem as tabelas no banco, abre em modo demonstração (dados de exemplo, nada é salvo).
+   O bolão começa em BOLAO_START: dias anteriores não contam.
+   Sem as tabelas no banco, funciona só na memória (nada é salvo).
    Quem garante as regras é o banco (supabase/schema.sql); aqui é só a tela.
    Carregado antes do app.js: usa as funções dele só depois que o app abre.
    ========================================================= */
 
 const GUESS_CENTS = 100;
+const BOLAO_START = "2026-10-02"; // primeiro dia de palpites; o placar começa zerado aqui
 const GUESS_CUTOFF = "12:00"; // o mesmo horário de bolao_cutoff() no banco
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Ícones SVG do sprite no index.html (#i-<nome>): crescem com o texto e usam a cor de onde estão
@@ -154,7 +156,7 @@ function makeDemo() {
   }));
   return {
     participants: people, guesses: [], payments: [], expenses: [], closures: [],
-    config: { pix_key: "", pix_name: "", pix_city: "" }, results: {}, firstDay: CAL_START,
+    config: { pix_key: "", pix_name: "", pix_city: "" }, results: {},
   };
 }
 
@@ -241,12 +243,12 @@ const dayOpen = (day) =>
 // Fora disso (tarde, noite, fim de semana) não há palpite aberto.
 function guessDay() {
   const day = todayKey();
-  return day >= CAL_START && day <= CAL_END && dayOpen(day) ? day : null;
+  return day >= BOLAO_START && day <= CAL_END && dayOpen(day) ? day : null;
 }
 
 // Próximo dia em que os palpites abrem (às 00:00)
 function nextOpeningDay() {
-  let day = todayKey() < CAL_START ? CAL_START : stepWeekday(todayKey(), 1);
+  let day = todayKey() < BOLAO_START ? BOLAO_START : stepWeekday(todayKey(), 1);
   if (isWeekend(day)) day = stepWeekday(day, 1);
   return day <= CAL_END ? day : null;
 }
@@ -263,7 +265,7 @@ function timeUntilOpen(day) {
 function revealDay() {
   let day = todayKey() > CAL_END ? CAL_END : todayKey();
   if (isWeekend(day) || dayOpen(day)) day = stepWeekday(day, -1);
-  return day >= (bolao.demo ? demo.data?.firstDay ?? CAL_START : CAL_START) ? day : null;
+  return day >= BOLAO_START ? day : null;
 }
 
 function timeLeft(day) {
@@ -422,11 +424,7 @@ function parseCents(text) {
 
 /* ---------------- Render ---------------- */
 
-const firstMonth = () => {
-  const start = monthKey(CAL_START);
-  const demoStart = bolao.demo && demo.data ? monthOf(demo.data.firstDay) : start;
-  return demoStart < start ? demoStart : start;
-};
+const firstMonth = () => monthOf(BOLAO_START);
 const lastMonth = () => (monthOf(todayKey()) < monthKey(CAL_END) ? monthOf(todayKey()) : monthKey(CAL_END));
 const clampMonth = (ym) => (ym < firstMonth() ? firstMonth() : ym > lastMonth() ? lastMonth() : ym);
 const initialOf = (name) => (String(name).trim().charAt(0) || "?").toUpperCase();
@@ -442,13 +440,6 @@ function renderBolao() {
   bolao.dirty = false;
   refreshDemoSnapshot();
   clearBolaoMemo();
-  $("#bolaoDemo").classList.toggle("hidden", !bolao.demo);
-  $("#bolaoDemo").innerHTML = bolao.demo
-    ? `<strong>${icon("eye")}Modo demonstração</strong>
-       <span>O bolão ainda não foi ativado no banco de dados. Tudo começa zerado e dá para testar à vontade,
-       mas nada é salvo: ao recarregar a página, volta ao zero. A camisa registrada no calendário é real e
-       já entra no resultado.</span>`
-    : "";
   bolao.month = clampMonth(bolao.month ?? monthOf(todayKey()));
   renderBolaoHero();
   renderBolaoWallet();
@@ -751,36 +742,11 @@ function renderReveal() {
     </div>`;
 }
 
-// Ranking simbólico: só no modo demonstração e só enquanto ninguém tem pontos de verdade.
-// Pontos de exemplo para dar para ver o efeito da animação; não entram no saldo nem no caixa.
-function symbolicRanking() {
-  const sample = [
-    { hits: 7, charged: 9, voids: 2, move: 1, last: ["hit", "miss", "void", "hit", "hit"], badges: [["crown", "Líder em pontos"], ["target", "Mira afiada: melhor aproveitamento"]] },
-    { hits: 6, charged: 9, voids: 1, move: -1, last: ["hit", "hit", "miss", "void", "hit"], badges: [["pause", "Acertou e descansa no próximo palpite"]] },
-    { hits: 5, charged: 10, voids: 1, move: 2, last: ["miss", "hit", "hit", "miss", "hit"], badges: [] },
-    { hits: 4, charged: 9, voids: 0, move: 0, last: ["miss", "hit", "miss", "hit", "miss"], badges: [] },
-    { hits: 3, charged: 10, voids: 1, move: -2, last: ["miss", "void", "miss", "hit", "miss"], badges: [] },
-    { hits: 2, charged: 11, voids: 0, move: 0, last: ["absent", "miss", "miss", "miss", "miss"], badges: [["heart", "Fiel ao bolão: mais palpites"], ["snow", "Pé-frio: 4 erros seguidos"]] },
-  ];
-  const days = [];
-  for (let d = todayKey(), i = 0; i < 5; i++) days.unshift((d = stepWeekday(d, -1)));
-  const list = activeParticipants().slice(0, sample.length).map((p, i) => {
-    const s = sample[i];
-    return { ...s, p, pos: i + 1, rate: s.hits / s.charged, last: s.last.map((st, k) => ({ day: days[k], st })) };
-  });
-  return { list };
-}
-
 function renderBolaoRank() {
   const ym = bolao.month;
   const monthly = bolao.scope === "month";
-  let rk = rankingFor(monthly ? (d) => monthOf(d) === ym : () => true, monthly ? ym : "all");
-  let played = rk.list.filter((r) => r.charged || r.voids);
-  const symbolic = bolao.demo && !played.length && activeParticipants().length > 0;
-  if (symbolic) {
-    rk = symbolicRanking();
-    played = rk.list;
-  }
+  const rk = rankingFor(monthly ? (d) => monthOf(d) === ym : () => true, monthly ? ym : "all");
+  const played = rk.list.filter((r) => r.charged || r.voids);
 
   let html = `
     <div class="br-head">
@@ -789,9 +755,7 @@ function renderBolaoRank() {
         <button type="button" role="tab" data-scope="month" aria-selected="${monthly}">${monthLabel(ym).split(" ")[0]}</button>
         <button type="button" role="tab" data-scope="all" aria-selected="${!monthly}">Geral</button>
       </div>
-    </div>
-    ${symbolic ? `<p class="br-symbolic">${icon("eye")}<span><b>Ranking simbólico:</b> pontos de exemplo só para ver o efeito.
-      Some sozinho quando houver pontos de verdade.</span></p>` : ""}`;
+    </div>`;
 
   if (!played.length) {
     $("#bolaoRank").innerHTML = html + `
@@ -1055,7 +1019,7 @@ function renderPay() {
         <div class="pay-qr-info">
           <span class="pay-value">${money(pay.cents)}</span>
           <span class="muted">para ${escapeHtml(pix.name || "o caixa do lanche")}</span>
-          ${symbolic ? `<p class="pay-warn">${bolao.demo ? "Demonstração: este QR Code é só de exemplo." : "Cadastre a chave Pix do caixa em Participantes e caixa para este QR Code virar um Pix de verdade."} Não pague por ele.</p>` : ""}
+          ${symbolic ? `<p class="pay-warn">Cadastre a chave Pix do caixa em Participantes e caixa para este QR Code virar um Pix de verdade. Não pague por ele.</p>` : ""}
         </div>
       </div>
       <label class="pay-copy">
