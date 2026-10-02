@@ -56,8 +56,12 @@ function fromKey(key) {
 // Sábado e domingo: sem aula, sem registro (luto no calendário)
 const isWeekend = (key) => [0, 6].includes(fromKey(key).getDay());
 
+// Formatadores de data guardados: criar um a cada chamada deixava calendário e listas lentos
+const dateFormatters = new Map();
 function formatDate(key, opts = { weekday: "long", day: "2-digit", month: "long" }) {
-  return fromKey(key).toLocaleDateString("pt-BR", opts);
+  const id = JSON.stringify(opts);
+  if (!dateFormatters.has(id)) dateFormatters.set(id, new Intl.DateTimeFormat("pt-BR", opts));
+  return dateFormatters.get(id).format(fromKey(key));
 }
 function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -90,8 +94,29 @@ function shirtSVG(color) {
     </svg>`;
 }
 
+// Fotos enviadas ficam no banco como data URL (até ~300 KB de texto). Colar esse texto em cada
+// cartão e em cada dia do calendário deixava a tela lenta: vira um endereço blob: curto, uma vez só.
+const imgUrls = new Map();
+function imgUrl(src) {
+  if (!src || !src.startsWith("data:")) return src;
+  let url = imgUrls.get(src);
+  if (!url) {
+    try {
+      const [head, b64] = src.split(",");
+      const bin = atob(b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      url = URL.createObjectURL(new Blob([bytes], { type: head.slice(5, head.indexOf(";")) }));
+    } catch {
+      url = src; // se não der para converter, usa o original
+    }
+    imgUrls.set(src, url);
+  }
+  return url;
+}
+
 function shirtMedia(shirt) {
-  return shirt.img ? `<img src="${escapeHtml(shirt.img)}" alt="${escapeHtml(shirt.name)}" />` : shirtSVG(shirt.color);
+  return shirt.img ? `<img src="${escapeHtml(imgUrl(shirt.img))}" alt="${escapeHtml(shirt.name)}" />` : shirtSVG(shirt.color);
 }
 
 /* ---------------- Auth ---------------- */
@@ -211,6 +236,7 @@ function sanitizeState(data) {
 async function reload() {
   const [data] = await Promise.all([api.fetchAll(), loadBolao()]);
   state = toState(data);
+  lastSyncSig = syncSignature(data.entries, data.settings);
   if (selectedDay) render();
 }
 
@@ -237,6 +263,11 @@ async function enterApp() {
 
 /* ---------------- Sincronização ---------------- */
 
+// Retrato do que a sincronização trouxe: se não mudou, não precisa redesenhar a tela inteira
+let lastSyncSig = null;
+const syncSignature = (entries, settings) =>
+  todayKey() + JSON.stringify(entries) + JSON.stringify(settings) + (bolao.sig ?? "");
+
 // Atualiza em segundo plano para ver o que outras pessoas registraram
 async function syncNow() {
   if (!state || busy || document.hidden || document.body.classList.contains("modal-open")) return;
@@ -249,6 +280,10 @@ async function syncNow() {
       return;
     }
     if (!state) return; // saiu durante a busca
+    // Nada mudou: só atualiza o que depende do relógio (contagem dos palpites do bolão)
+    const sig = syncSignature(light.entries, light.settings);
+    if (sig === lastSyncSig) { tickBolao(); return; }
+    lastSyncSig = sig;
     state = toState({ shirts: state.shirts, entries: light.entries, settings: light.settings });
     render();
   } catch (ex) {
@@ -649,7 +684,7 @@ function renderCalendar() {
 
     const media = id === ABSENT
       ? `<img src="${ABSENT_IMG}" alt="" />`
-      : shirt ? (shirt.img ? `<img src="${escapeHtml(shirt.img)}" alt="" />` : shirtSVG(shirt.color)) : "";
+      : shirt ? (shirt.img ? `<img src="${escapeHtml(imgUrl(shirt.img))}" alt="" />` : shirtSVG(shirt.color)) : "";
     const run = shirt ? byDay[key] ?? 0 : 0;
     const label = formatDate(key, { weekday: "long", day: "2-digit", month: "long" }) +
       (weekend ? " — luto (fim de semana)" : "") +
@@ -1001,6 +1036,8 @@ function applyView() {
     if (current) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
   });
+  // O bolão só é desenhado quando a página dele abre (fica pesado desenhá-lo escondido)
+  if (bolaoView && state) renderBolao();
 }
 window.addEventListener("hashchange", () => {
   applyView();

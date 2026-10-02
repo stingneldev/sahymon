@@ -64,11 +64,25 @@ async function loadBolao() {
       bolao.demo = true;
       bolao.available = true;
       bolao.probedAt = Date.now();
+      bolao.sig = "demo"; // na demonstração só muda o que se faz na própria tela
     }
     return; // outras falhas: mantém o que já tinha e tenta de novo na próxima
   }
   if (bolao.demo) { bolao.demo = false; demo.data = null; bolao.picked = null; }
+  const sig = JSON.stringify(d);
+  if (sig === bolao.sig && bolao.available) return; // nada mudou no banco: mantém o que já está montado
+  bolao.sig = sig;
   applyBolao(d);
+}
+
+// Atualização leve do relógio (a cada minuto, quando nada mudou): contagem regressiva
+// e abertura/fechamento dos palpites, sem redesenhar a página inteira
+function tickBolao() {
+  if (!bolao.available || !state || !$("#app").classList.contains("view-bolao")) return;
+  refreshDemoSnapshot();
+  clearBolaoMemo();
+  renderBolaoHero();
+  renderBolaoGuess();
 }
 
 // Valida e guarda o que veio do banco (ou da demonstração)
@@ -85,6 +99,14 @@ function applyBolao(d) {
   bolao.guesses = (d.guesses || [])
     .filter((g) => DAY_RE.test(g.day) && ids.has(g.participant_id))
     .map((g) => ({ day: g.day, participant_id: g.participant_id, shirt_id: typeof g.shirt_id === "string" ? g.shirt_id : null }));
+  // Índices: achar o palpite de alguém num dia (ou os palpites de um dia) sem percorrer a lista toda
+  bolao.guessIndex = new Map(bolao.guesses.map((g) => [`${g.day}|${g.participant_id}`, g]));
+  bolao.guessesByDay = new Map();
+  for (const g of bolao.guesses) {
+    if (!bolao.guessesByDay.has(g.day)) bolao.guessesByDay.set(g.day, []);
+    bolao.guessesByDay.get(g.day).push(g);
+  }
+  clearBolaoMemo();
   bolao.payments = (d.payments || [])
     .filter((p) => UUID_RE.test(p.id) && ids.has(p.participant_id) && DAY_RE.test(p.month) && Number.isInteger(p.amount_cents))
     .map((p) => ({ ...p, confirmed: p.confirmed !== false }));
@@ -111,7 +133,7 @@ const backend = () => (bolao.demo ? demoApi : api);
 
 /* ---------------- Modo demonstração ---------------- */
 
-const demo = { data: null };
+const demo = { data: null, version: 0, snapKey: null }; // version sobe a cada escrita na demonstração
 // Os mesmos participantes que o schema.sql cadastra
 const DEMO_PEOPLE = [
   ["Stingnel", "#4f46e5"], ["Manito", "#f59e0b"], ["Ortelas", "#a855f7"],
@@ -134,6 +156,15 @@ function makeDemo() {
     participants: people, guesses: [], payments: [], expenses: [], closures: [],
     config: { pix_key: "", pix_name: "", pix_city: "" }, results: {}, firstDay: CAL_START,
   };
+}
+
+// Remonta a demonstração só quando algo muda: uma ação, o dia, o meio-dia ou a camisa registrada
+function refreshDemoSnapshot() {
+  if (!bolao.demo) return;
+  const key = `${demo.version}|${todayKey()}|${Date.now() >= cutoffOf(todayKey()).getTime()}|${JSON.stringify(state.log)}`;
+  if (key === demo.snapKey) return;
+  demo.snapKey = key;
+  applyBolao(demoSnapshot());
 }
 
 // Retrato da demonstração no mesmo formato do banco (camisas escondidas nos dias abertos)
@@ -179,7 +210,17 @@ const monthOf = (day) => day.slice(0, 7);
 const closureOf = (ym) => bolao.closures.find((c) => monthOf(c.month) === ym);
 const participantById = (id) => bolao.participants.find((p) => p.id === id);
 const activeParticipants = () => bolao.participants.filter((p) => p.active);
-const guessOf = (day, pid) => bolao.guesses.find((g) => g.day === day && g.participant_id === pid);
+const guessOf = (day, pid) => bolao.guessIndex?.get(`${day}|${pid}`);
+const guessesOn = (day) => bolao.guessesByDay?.get(day) ?? [];
+
+// Cálculos pesados (placar, caixa, saldo) ficam guardados durante um desenho da tela
+// e são refeitos quando os dados mudam ou a tela é desenhada de novo
+const bolaoMemo = new Map();
+const clearBolaoMemo = () => bolaoMemo.clear();
+function memoize(key, fn) {
+  if (!bolaoMemo.has(key)) bolaoMemo.set(key, fn());
+  return bolaoMemo.get(key);
+}
 
 // Camisa do dia: a do calendário; na demonstração, os dias de exemplo têm resultado próprio
 const resultOf = (day) => state.log[day] ?? (bolao.demo ? demo.data?.results[day] : undefined);
@@ -310,8 +351,13 @@ function scoreboard(inPeriod) {
   return { list, lastScored };
 }
 
-// Placar + setas de subida/descida desde o último dia com resultado + destaques
-function rankingFor(inPeriod) {
+// Placar + setas de subida/descida desde o último dia com resultado + destaques.
+// key identifica o período ("YYYY-MM" ou "all") para o cache.
+function rankingFor(inPeriod, key) {
+  return memoize(`rank:${key}`, () => buildRanking(inPeriod));
+}
+
+function buildRanking(inPeriod) {
   const now = scoreboard(inPeriod);
   if (now.lastScored) {
     const before = scoreboard((d) => inPeriod(d) && d < now.lastScored);
@@ -338,7 +384,11 @@ function rankingFor(inPeriod) {
 
 // Caixa do mês. Só pagamento confirmado conta como recebido.
 function cashFor(ym) {
-  const { list } = scoreboard((d) => monthOf(d) === ym);
+  return memoize(`cash:${ym}`, () => buildCash(ym));
+}
+
+function buildCash(ym) {
+  const { list } = rankingFor((d) => monthOf(d) === ym, ym);
   const paidBy = new Map();
   const pendingBy = new Map();
   for (const pay of bolao.payments) {
@@ -387,7 +437,11 @@ const bolaoNote = (html) => `<p class="bg-note">${html}</p>`;
 function renderBolao() {
   $("#bolao").classList.toggle("hidden", !bolao.available);
   if (!bolao.available || !state) return;
-  if (bolao.demo) applyBolao(demoSnapshot());
+  // Na tela do calendário o bolão está escondido: desenha quando a página dele abrir
+  if (!$("#app").classList.contains("view-bolao")) { bolao.dirty = true; return; }
+  bolao.dirty = false;
+  refreshDemoSnapshot();
+  clearBolaoMemo();
   $("#bolaoDemo").classList.toggle("hidden", !bolao.demo);
   $("#bolaoDemo").innerHTML = bolao.demo
     ? `<strong>${icon("eye")}Modo demonstração</strong>
@@ -400,7 +454,8 @@ function renderBolao() {
   renderBolaoWallet();
   renderBolaoGuess();
   renderBolaoRank();
-  renderBolaoAdmin();
+  // "Participantes e caixa" fica recolhido quase sempre: só é montado quando está aberto
+  if ($("#bolaoAdminBox").open) renderBolaoAdmin();
   if (!$("#payModal").classList.contains("hidden")) renderPay();
   if (!$("#buyModal").classList.contains("hidden")) renderBuyPreview();
 }
@@ -408,10 +463,10 @@ function renderBolao() {
 // Cabeçalho: bolão do dia, caixa do mês e líder do mês
 function renderBolaoHero() {
   $("#bolaoHeroSub").textContent = `Palpite a camisa do ${state.friend}, junte o caixa do lanche e dispute a sobra do mês.`;
-  const pot = bolao.guesses.filter((g) => g.day === todayKey()).length * GUESS_CENTS;
+  const pot = guessesOn(todayKey()).length * GUESS_CENTS;
   const ym = clampMonth(monthOf(todayKey()));
   const cash = cashFor(ym);
-  const leader = rankingFor((d) => monthOf(d) === ym).list.find((r) => r.hits > 0);
+  const leader = rankingFor((d) => monthOf(d) === ym, ym).list.find((r) => r.hits > 0);
   $("#bolaoHeroStats").innerHTML = `
     <div class="bh-stat">
       <span>Bolão de hoje</span>
@@ -429,6 +484,10 @@ function renderBolaoHero() {
 
 // Saldo do caixa desde o início: o que entrou (Pix confirmados) menos lanche e prêmios pagos
 function walletStats() {
+  return memoize("wallet", buildWallet);
+}
+
+function buildWallet() {
   const sum = (list, f) => list.reduce((a, x) => a + f(x), 0);
   const confirmed = bolao.payments.filter((p) => p.confirmed);
   const received = sum(confirmed, (p) => p.amount_cents);
@@ -442,7 +501,7 @@ function walletStats() {
       at: c.closed_at ?? c.month, cents: -c.prize_cents, icon: "trophy",
       label: `Prêmio de ${monthLabel(monthOf(c.month)).toLowerCase()}${c.winners ? ` · ${c.winners}` : ""}`,
     })),
-  ].sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  ].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0)); // mais recente primeiro (datas ISO)
 
   return { received, snacks, moves, balance: received - snacks - prizes };
 }
@@ -592,7 +651,7 @@ function renderBolaoGuess() {
     bolao.pickedShirt = null;
     const next = nextOpeningDay();
     const today = todayKey();
-    const todayCount = bolao.guesses.filter((g) => g.day === today).length;
+    const todayCount = guessesOn(today).length;
     html += next ? `
       <div class="bg-head bg-closed">
         <span class="bg-eyebrow">${icon("lock")}Palpites fechados</span>
@@ -608,7 +667,7 @@ function renderBolaoGuess() {
     if (!shirtById(bolao.pickedShirt)) bolao.pickedShirt = null;
     const picked = participantById(bolao.picked);
     const shirt = picked ? shirtById(bolao.pickedShirt) : null;
-    const pot = bolao.guesses.filter((g) => g.day === day).length;
+    const pot = guessesOn(day).length;
 
     html += `
       <div class="bg-head">
@@ -715,7 +774,7 @@ function symbolicRanking() {
 function renderBolaoRank() {
   const ym = bolao.month;
   const monthly = bolao.scope === "month";
-  let rk = rankingFor(monthly ? (d) => monthOf(d) === ym : () => true);
+  let rk = rankingFor(monthly ? (d) => monthOf(d) === ym : () => true, monthly ? ym : "all");
   let played = rk.list.filter((r) => r.charged || r.voids);
   const symbolic = bolao.demo && !played.length && activeParticipants().length > 0;
   if (symbolic) {
@@ -1042,6 +1101,7 @@ async function formPayQr() {
   if (matchMedia("(prefers-reduced-motion: reduce)").matches || typeof qrcode !== "function") { showFormedQr(box); return; }
 
   try {
+    if (qr3d.loading) await qr3d.loading; // já estava sendo carregado em segundo plano
     qr3d.module ??= await import("./assets/vendor/qr3d.js");
     if (!box.isConnected || box.dataset.payload !== qr3d.payload) return; // trocou de tela enquanto carregava
     const qr = qrcode(0, "M");
@@ -1110,6 +1170,7 @@ async function bolaoWrite(fn, denied) {
   busy = true;
   try {
     const result = await fn();
+    if (bolao.demo) demo.version++; // a demonstração mudou: remonta no próximo desenho
     if (Array.isArray(result) && !result.length) { toast(denied); return false; }
     return true;
   } catch (ex) {
@@ -1129,6 +1190,20 @@ function pickPerson(id) {
   bolao.pickedShirt = null;
   if (bolao.picked) rememberPlayer(id);
   renderBolaoGuess();
+  prefetchQr3d();
+}
+
+// Carrega o QR Code 3D em segundo plano enquanto a pessoa escolhe a camisa,
+// para a janela do Pix não engasgar ao abrir
+function prefetchQr3d() {
+  if (qr3d.module || qr3d.loading || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const load = () => {
+    qr3d.loading = import("./assets/vendor/qr3d.js")
+      .then((m) => { qr3d.module ??= m; })
+      .catch(() => { qr3d.loading = null; });
+  };
+  if ("requestIdleCallback" in window) requestIdleCallback(load, { timeout: 2000 });
+  else setTimeout(load, 300);
 }
 
 // Passo 2: qual camisa (ainda não grava nada; o Pix do passo 3 é que confirma)
@@ -1143,7 +1218,7 @@ function pickShirt(id) {
 async function bolaoAfterResult(day) {
   await refreshBolao();
   if (!bolao.available) return;
-  const list = bolao.guesses.filter((g) => g.day === day);
+  const list = guessesOn(day);
   if (!list.length) return;
   if (resultOf(day) === ABSENT) { toast(`Falta registrada: os ${list.length} palpites do dia foram anulados`); return; }
   const hits = list.filter((g) => guessStatus(g) === "hit").map((g) => participantById(g.participant_id)?.name).filter(Boolean);
@@ -1425,6 +1500,11 @@ document.getElementById("buyValue").addEventListener("input", renderBuyPreview);
 document.getElementById("buyForm").addEventListener("submit", (e) => {
   e.preventDefault();
   submitBuy();
+});
+
+// "Participantes e caixa" é montado na hora em que é aberto
+document.getElementById("bolaoAdminBox").addEventListener("toggle", (e) => {
+  if (e.target.open && bolao.available && state) renderBolaoAdmin();
 });
 
 // Listas recolhíveis lembram se estavam abertas ("toggle" não borbulha: escuta na captura)

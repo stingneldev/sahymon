@@ -196,7 +196,7 @@
     running = true;
     // Velocidade média para todas as animações enquanto o login está na tela
     if (lib.engine) lib.engine.speed = SPEED;
-    const count = reduceMotion.matches ? 8 : innerWidth < 560 ? 18 : 28;
+    const count = reduceMotion.matches ? 8 : innerWidth < 560 ? 14 : 26; // menos no celular, para não pesar
     for (let i = 0; i < count; i++) launchEmoji();
     mysteryTimer = setInterval(launchMystery, MYSTERY_EVERY);
   }
