@@ -26,6 +26,9 @@
 
   <!-- ============ LOGIN ============ -->
   <section id="auth" class="auth hidden">
+    <!-- Chuva de emojis (login-rain.js): atrás do cartão; as interrogações caem na frente para dar para clicar -->
+    <div class="rain" id="rainBack" aria-hidden="true"></div>
+    <div class="rain rain-front" id="rainFront"></div>
     <div class="auth-card">
       <div class="auth-brand">
         <img class="auth-logo" src="assets/logo.webp" alt="" width="132" height="132" />
@@ -191,6 +194,17 @@
     </div>
   </div>
 
+  <!-- ============ SURPRESA (interrogação da tela de login) ============ -->
+  <div id="surprise" class="surprise hidden" role="dialog" aria-modal="true" aria-labelledby="surpriseTitle">
+    <div class="surprise-rays" aria-hidden="true"></div>
+    <div class="surprise-burst" id="surpriseBurst" aria-hidden="true"></div>
+    <p class="surprise-title" id="surpriseTitle">✨ Surpresa! ✨</p>
+    <figure class="surprise-card">
+      <img id="surpriseImg" alt="Imagem surpresa" />
+    </figure>
+    <button id="surpriseClose" class="btn btn-primary surprise-close" type="button">Fechar e continuar</button>
+  </div>
+
   <div id="toast" class="toast"></div>
 
   <script src="config.js"></script>
@@ -198,5 +212,6 @@
   <script src="app.js"></script>
   <script src="assets/vendor/anime.umd.min.js"></script>
   <script src="login-anim.js"></script>
+  <script src="login-rain.js"></script>
 </body>
 </html>
