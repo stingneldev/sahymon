@@ -44,6 +44,7 @@ const bolao = {
   month: null,      // "YYYY-MM" do caixa e do ranking mensal
   scope: "month",   // ranking: "month" ou "all"
   picked: null,     // participante escolhido para palpitar
+  pickedShirt: null, // camisa escolhida no palpite (o palpite só é gravado depois do Pix)
   avatarFor: null,  // participante (ou "new") com a grade de cores aberta
   newColor: null,   // cor escolhida para o próximo participante
   openDetails: new Set(), // listas recolhíveis abertas (continuam abertas quando a tela se atualiza)
@@ -148,11 +149,14 @@ const demoFail = (message) => { throw new ApiError(message, 400, "P0001"); };
 const demoApi = {
   async placeGuess(day, pid, shirt) {
     const d = demo.data;
-    if (day !== guessDay()) demoFail("O horário virou: os palpites agora são para outro dia. Confira e tente de novo.");
+    if (!guessDay()) demoFail("Os palpites de hoje já fecharam. Eles abrem de novo às 00:00 do próximo dia útil.");
+    if (day !== guessDay()) demoFail("O horário virou: confira o dia do palpite e tente de novo.");
     if (!d.participants.some((p) => p.id === pid && p.active)) demoFail("Participante não encontrado.");
     if (d.guesses.some((g) => g.day === day && g.participant_id === pid)) demoFail("Esse participante já palpitou hoje. Palpite não pode ser trocado.");
     if (isResting(pid, day)) demoFail("Quem acertou no dia anterior descansa hoje.");
+    // Fecha o ciclo como o banco: palpite + Pix de R$ 1,00 informado
     d.guesses.push({ day, participant_id: pid, shirt_id: shirt });
+    d.payments.push({ id: demoId(), participant_id: pid, month: `${monthOf(day)}-01`, amount_cents: GUESS_CENTS, confirmed: false, created_at: new Date().toISOString() });
   },
   async addParticipant(row) {
     if (demo.data.participants.some((p) => p.name.toLowerCase() === row.name.toLowerCase())) throw new ApiError("duplicado", 409, "23505");
@@ -192,11 +196,26 @@ function stepWeekday(key, delta) {
 const dayOpen = (day) =>
   !isWeekend(day) && Date.now() < cutoffOf(day).getTime() && !resultOf(day) && !closureOf(monthOf(day));
 
-// Dia que recebe palpites agora: hoje até o meio-dia, depois o próximo dia útil
+// Dia que recebe palpites agora: só o próprio dia, das 00:00 ao meio-dia (Brasília).
+// Fora disso (tarde, noite, fim de semana) não há palpite aberto.
 function guessDay() {
-  let day = todayKey() < CAL_START ? CAL_START : todayKey();
-  if (!dayOpen(day)) day = stepWeekday(day, 1);
-  return day <= CAL_END && dayOpen(day) ? day : null;
+  const day = todayKey();
+  return day >= CAL_START && day <= CAL_END && dayOpen(day) ? day : null;
+}
+
+// Próximo dia em que os palpites abrem (às 00:00)
+function nextOpeningDay() {
+  let day = todayKey() < CAL_START ? CAL_START : stepWeekday(todayKey(), 1);
+  if (isWeekend(day)) day = stepWeekday(day, 1);
+  return day <= CAL_END ? day : null;
+}
+
+// "abrem em 11h20" até as 00:00 do dia
+function timeUntilOpen(day) {
+  const min = Math.max(1, Math.ceil((new Date(`${day}T00:00:00-03:00`).getTime() - Date.now()) / 60000));
+  const h = Math.floor(min / 60);
+  return h >= 24 ? `abrem em ${Math.floor(h / 24)}d${String(h % 24).padStart(2, "0")}h`
+    : h ? `abrem em ${h}h${String(min % 60).padStart(2, "0")}` : `abrem em ${min} min`;
 }
 
 // Último dia útil que já fechou (os palpites dele já podem ser vistos)
@@ -305,7 +324,7 @@ function rankingFor(inPeriod) {
   const bestRate = Math.max(0, ...played.filter((r) => r.charged >= 3).map((r) => r.rate));
   const mostPlayed = Math.max(0, ...played.map((r) => r.charged));
   const coldest = Math.max(0, ...played.map((r) => r.coldStreak));
-  const today = guessDay();
+  const today = guessDay() ?? nextOpeningDay(); // quem descansa no dia aberto (ou no próximo)
   now.list.forEach((r) => {
     r.badges = [];
     if (top > 0 && r.hits === top) r.badges.push(["crown", "Líder em pontos"]);
@@ -389,14 +408,13 @@ function renderBolao() {
 // Cabeçalho: bolão do dia, caixa do mês e líder do mês
 function renderBolaoHero() {
   $("#bolaoHeroSub").textContent = `Palpite a camisa do ${state.friend}, junte o caixa do lanche e dispute a sobra do mês.`;
-  const day = guessDay();
-  const pot = day ? bolao.guesses.filter((g) => g.day === day).length * GUESS_CENTS : 0;
+  const pot = bolao.guesses.filter((g) => g.day === todayKey()).length * GUESS_CENTS;
   const ym = clampMonth(monthOf(todayKey()));
   const cash = cashFor(ym);
   const leader = rankingFor((d) => monthOf(d) === ym).list.find((r) => r.hits > 0);
   $("#bolaoHeroStats").innerHTML = `
     <div class="bh-stat">
-      <span>${day === todayKey() ? "Bolão de hoje" : "Próximo bolão"}</span>
+      <span>Bolão de hoje</span>
       <b>${money(pot)}</b>
     </div>
     <div class="bh-stat">
@@ -561,27 +579,42 @@ async function submitBuy() {
   toast(`Compra registrada. Saldo do caixa: ${money(walletStats().balance)}`);
 }
 
+// Ciclo do palpite: 1) quem palpita → 2) qual camisa → 3) Pix de R$ 1,00.
+// O palpite só é gravado quando o Pix é concluído; aí o participante só volta no próximo dia, às 00:00.
 function renderBolaoGuess() {
   const day = guessDay();
   const people = activeParticipants();
   let html = "";
 
   if (!day) {
-    html += bolaoNote("O bolão terminou junto com o calendário.");
+    // Fora do horário (depois do meio-dia, à noite ou no fim de semana): palpites fechados
+    bolao.picked = null;
+    bolao.pickedShirt = null;
+    const next = nextOpeningDay();
+    const today = todayKey();
+    const todayCount = bolao.guesses.filter((g) => g.day === today).length;
+    html += next ? `
+      <div class="bg-head bg-closed">
+        <span class="bg-eyebrow">${icon("lock")}Palpites fechados</span>
+        <strong class="bg-day">Abrem ${formatDate(next, { weekday: "long", day: "2-digit", month: "long" })}, às 00:00</strong>
+        <span class="bg-meta">${icon("clock")}${timeUntilOpen(next)} · os palpites de cada dia vão das 00:00 ao meio-dia</span>
+        ${!isWeekend(today) && todayCount ? `<span class="bg-pot">${icon("coin")}Hoje: <b>${money(todayCount * GUESS_CENTS)}</b> em ${todayCount} ${todayCount === 1 ? "palpite" : "palpites"}</span>` : ""}
+      </div>` : bolaoNote("O bolão terminou junto com o calendário.");
   } else {
     const done = people.filter((p) => guessOf(day, p.id));
     const resting = people.filter((p) => !guessOf(day, p.id) && isResting(p.id, day));
     const canPick = (id) => people.some((p) => p.id === id && !guessOf(day, p.id) && !isResting(p.id, day));
-    const isToday = day === todayKey();
     if (!canPick(bolao.picked)) bolao.picked = canPick(rememberedPlayer()) ? rememberedPlayer() : null;
+    if (!shirtById(bolao.pickedShirt)) bolao.pickedShirt = null;
     const picked = participantById(bolao.picked);
+    const shirt = picked ? shirtById(bolao.pickedShirt) : null;
     const pot = bolao.guesses.filter((g) => g.day === day).length;
 
     html += `
       <div class="bg-head">
-        <span class="bg-eyebrow">${isToday ? "Palpite de hoje" : "Próximo palpite"}</span>
+        <span class="bg-eyebrow">Palpite de hoje</span>
         <strong class="bg-day">${formatDate(day)}</strong>
-        <span class="bg-meta">${icon("clock")}Fecha ao meio-dia${isToday ? ` · ${timeLeft(day)}` : ""} · ${done.length} de ${people.length - resting.length} já palpitaram</span>
+        <span class="bg-meta">${icon("clock")}Aberto até o meio-dia · ${timeLeft(day)} · ${done.length} de ${people.length - resting.length} já palpitaram</span>
         <span class="bg-pot">${icon("coin")}Bolão do dia: <b>${money(pot * GUESS_CENTS)}</b> em ${pot} ${pot === 1 ? "palpite" : "palpites"}</span>
       </div>`;
 
@@ -592,7 +625,7 @@ function renderBolaoGuess() {
         <div class="bg-people">` + people.map((p) => {
           const did = Boolean(guessOf(day, p.id));
           const rest = !did && isResting(p.id, day);
-          const title = did ? "Já palpitou (palpite guardado até fechar)" : rest ? "Acertou no dia anterior: descansa hoje" : "Escolher";
+          const title = did ? "Já palpitou hoje: volta amanhã, a partir das 00:00" : rest ? "Acertou no dia anterior: descansa hoje" : "Escolher";
           return `
             <button class="bg-person ${p.id === bolao.picked ? "is-picked" : ""} ${did ? "is-done" : ""} ${rest ? "is-resting" : ""}"
                     data-person="${p.id}" type="button" ${did || rest ? "disabled" : ""} aria-pressed="${p.id === bolao.picked}" title="${title}">
@@ -602,11 +635,18 @@ function renderBolaoGuess() {
 
       html += `<p class="bg-step ${picked ? "" : "is-waiting"}"><span>2</span>${picked ? `Qual camisa <b>${escapeHtml(picked.name)}</b> acha que vem?` : "Qual camisa vem? (escolha quem palpita primeiro)"}</p>
         <div class="bg-shirts ${picked ? "" : "is-waiting"}">` + state.shirts.map((s) => `
-          <button class="bg-shirt" data-guess="${escapeHtml(s.id)}" type="button" ${picked ? "" : "disabled"}>
+          <button class="bg-shirt ${shirt?.id === s.id ? "is-picked" : ""}" data-shirt="${escapeHtml(s.id)}" type="button"
+                  ${picked ? "" : "disabled"} aria-pressed="${shirt?.id === s.id}">
             <span class="bg-media">${shirtMedia(s)}</span>
             <span class="bg-name" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</span>
-          </button>`).join("") + `</div>
-        <p class="bg-rule">${icon("lock")}Cada palpite vale ${money(GUESS_CENTS)} e é definitivo: não dá para trocar nem excluir.</p>`;
+          </button>`).join("") + `</div>`;
+
+      html += `<p class="bg-step ${shirt ? "" : "is-waiting"}"><span>3</span>Pague ${money(GUESS_CENTS)} por Pix para confirmar</p>
+        ${shirt ? `<p class="bg-summary">${avatar(picked, "is-sm")}<span><b>${escapeHtml(picked.name)}</b> acha que vem <b>${escapeHtml(shirt.name)}</b></span></p>` : ""}
+        <button class="btn btn-primary btn-block bg-go-pix" id="bolaoGuessPix" type="button" ${shirt ? "" : "disabled"}>
+          ${icon("card")}Ir para o Pix · ${money(GUESS_CENTS)}
+        </button>
+        <p class="bg-rule">${icon("lock")}O palpite só vale depois do Pix e é definitivo: não dá para trocar nem excluir. Depois, o participante só volta a palpitar no próximo dia, a partir das 00:00.</p>`;
     }
   }
 
@@ -856,14 +896,30 @@ function renderBolaoAdmin() {
 
 /* ---------------- Pagamento com QR Code ---------------- */
 
-const pay = { pid: null, cents: GUESS_CENTS, sent: null };
+// guess: { day, shirtId } quando a janela é o passo 3 do palpite (o Pix grava o palpite)
+const pay = { pid: null, cents: GUESS_CENTS, sent: null, guess: null };
 const payMonth = () => clampMonth(monthOf(todayKey()));
 
-function openPay(pid = null) {
-  Object.assign(pay, { pid: pid ?? rememberedPlayer(), cents: GUESS_CENTS, sent: null });
+function showPayModal() {
   $("#payModal").classList.remove("hidden");
   syncModalLock();
   renderPay();
+}
+
+// Pagar uma dívida (botão "Pagar com Pix" do saldo)
+function openPay(pid = null) {
+  Object.assign(pay, { pid: pid ?? rememberedPlayer(), cents: GUESS_CENTS, sent: null, guess: null });
+  showPayModal();
+}
+
+// Passo 3 do palpite: o Pix de R$ 1,00 que confirma o palpite escolhido
+function openGuessPay() {
+  const day = guessDay();
+  const person = participantById(bolao.picked);
+  const shirt = shirtById(bolao.pickedShirt);
+  if (!day || !person || !shirt || guessOf(day, person.id) || isResting(person.id, day)) return;
+  Object.assign(pay, { pid: person.id, cents: GUESS_CENTS, sent: null, guess: { day, shirtId: shirt.id } });
+  showPayModal();
 }
 
 function closePay() {
@@ -872,6 +928,8 @@ function closePay() {
   syncModalLock();
   stopQr3d();
   qr3d.payload = null; // ao abrir de novo, o QR Code se forma outra vez
+  if (pay.guess && !pay.sent) toast("Palpite não registrado: ele só vale depois de concluir o Pix.");
+  pay.guess = null;
 }
 
 function renderPay() {
@@ -880,12 +938,23 @@ function renderPay() {
   const person = participantById(pay.pid);
   const row = person && cash.people.find((r) => r.p.id === person.id);
   const due = Math.max(0, (row?.owed ?? 0) - (row?.pending ?? 0));
+  const guessShirt = pay.guess ? shirtById(pay.guess.shirtId) : null;
   const step = pay.sent ? 3 : person ? 2 : 1;
-  const steps = ["Quem paga", "QR Code", "Pronto"].map((label, i) =>
+  const steps = [pay.guess ? "Palpite" : "Quem paga", "QR Code", "Pronto"].map((label, i) =>
     `<li class="${i + 1 === step ? "is-now" : i + 1 < step ? "is-done" : ""}"><span>${i + 1 < step ? icon("tick", "is-tag") : i + 1}</span>${label}</li>`).join("");
   let html = `<ol class="pay-steps">${steps}</ol>`;
 
-  if (pay.sent) {
+  if (pay.sent?.guess) {
+    const next = nextOpeningDay();
+    html += `
+      <div class="pay-done">
+        <span class="pay-done-icon">${icon("sparkles")}</span>
+        <strong>Palpite de ${escapeHtml(person?.name ?? "")} registrado!</strong>
+        <p><b>${escapeHtml(pay.sent.shirtName)}</b> · Pix de ${money(pay.sent.cents)} informado (o caixa confirma depois).<br>
+          ${next ? `Próximo palpite: ${formatDate(next, { weekday: "long", day: "2-digit", month: "2-digit" })}, a partir das 00:00.` : ""}</p>
+        <button class="btn btn-primary" data-pay-close type="button">Fechar</button>
+      </div>`;
+  } else if (pay.sent) {
     html += `
       <div class="pay-done">
         <span class="pay-done-icon">${icon("sparkles")}</span>
@@ -908,13 +977,20 @@ function renderPay() {
     const symbolic = bolao.demo || !bolao.pix.key;
     const pix = symbolic ? DEMO_PIX : bolao.pix;
     const payload = pixPayload({ key: pix.key, name: pix.name, city: pix.city, cents: pay.cents, txid: `BOLAO${person.name}` });
-    html += `
+    html += guessShirt ? `
+      <div class="pay-who">
+        ${avatar(person)}<div><strong>${escapeHtml(person.name)}</strong>
+        <span>acha que vem <b>${escapeHtml(guessShirt.name)}</b> · ${formatDate(pay.guess.day, { weekday: "short", day: "2-digit", month: "2-digit" })}</span></div>
+        <button class="link-btn" data-pay-close type="button">Trocar</button>
+      </div>
+      <p class="pay-fixed">${icon("lock")}O palpite só é registrado quando você toca em <b>Já fiz o Pix</b>.</p>` : `
       <div class="pay-who">
         ${avatar(person)}<div><strong>${escapeHtml(person.name)}</strong>
         <span>${due ? `deve ${money(due)} em ${monthLabel(ym).toLowerCase()} (${due / GUESS_CENTS} ${due === GUESS_CENTS ? "Pix" : "Pix de R$ 1,00"})` : "está em dia: pagamento adiantado"}${row?.pending ? ` · ${icon("hourglass")}${money(row.pending)} aguardando` : ""}</span></div>
         <button class="link-btn" data-pay-pick="" type="button">Trocar</button>
       </div>
-      <p class="pay-fixed">${icon("coin")}Cada Pix vale <b>${money(GUESS_CENTS)}</b>, o valor de um palpite.</p>
+      <p class="pay-fixed">${icon("coin")}Cada Pix vale <b>${money(GUESS_CENTS)}</b>, o valor de um palpite.</p>`;
+    html += `
       <div class="pay-qr-wrap">
         <div class="pay-qr ${symbolic ? "is-symbolic" : ""} ${qr3d.payload === payload ? "is-formed" : "is-forming"}" data-payload="${escapeHtml(payload)}">${pixQrSvg(payload, `QR Code Pix de ${money(pay.cents)}`)}${symbolic ? `<span class="pay-qr-tag">SIMBÓLICO</span>` : ""}</div>
         <div class="pay-qr-info">
@@ -930,9 +1006,9 @@ function renderPay() {
       <ol class="pay-howto">
         <li>Abra o app do banco → <b>Pix</b> → <b>Ler QR Code</b> (ou <b>Pix copia e cola</b>).</li>
         <li>Confira o valor e o nome de quem recebe.</li>
-        <li>Volte aqui e toque em <b>Já fiz o Pix</b>.</li>
+        <li>Volte aqui e toque em <b>${guessShirt ? "Já fiz o Pix · confirmar palpite" : "Já fiz o Pix"}</b>.</li>
       </ol>
-      <button class="btn btn-primary btn-block" data-pay-sent type="button">${icon("check")}Já fiz o Pix</button>`;
+      <button class="btn btn-primary btn-block" data-pay-sent type="button">${icon("check")}${guessShirt ? "Já fiz o Pix · confirmar palpite" : "Já fiz o Pix"}</button>`;
   }
   $("#payBody").innerHTML = html;
   formPayQr();
@@ -992,6 +1068,23 @@ async function formPayQr() {
 async function paySent() {
   const person = participantById(pay.pid);
   if (!person || !(pay.cents > 0)) return;
+
+  // Passo 3 do palpite: o banco grava o palpite e o Pix de R$ 1,00 juntos
+  if (pay.guess) {
+    const { day, shirtId } = pay.guess;
+    const shirt = shirtById(shirtId);
+    const ok = await bolaoWrite(() => backend().placeGuess(day, person.id, shirtId), "Não foi possível registrar o palpite.");
+    if (!ok) { await refreshBolao(); return; }
+    rememberPlayer(person.id);
+    pay.sent = { cents: pay.cents, guess: true, shirtName: shirt?.name ?? "" };
+    bolao.picked = null;
+    bolao.pickedShirt = null;
+    await refreshBolao();
+    renderPay();
+    toast(`Palpite de ${person.name} registrado!`);
+    return;
+  }
+
   const done = await bolaoWrite(
     () => backend().addPayment({ participant_id: person.id, month: `${payMonth()}-01`, amount_cents: pay.cents, confirmed: false }),
     "Mês encerrado: não dá para registrar pagamentos.",
@@ -1030,30 +1123,19 @@ async function bolaoWrite(fn, denied) {
   }
 }
 
+// Passo 1: quem palpita (trocar de pessoa limpa a camisa escolhida)
 function pickPerson(id) {
   bolao.picked = bolao.picked === id ? null : id;
+  bolao.pickedShirt = null;
   if (bolao.picked) rememberPlayer(id);
   renderBolaoGuess();
 }
 
-async function placeGuess(shirtId) {
-  const day = guessDay();
-  const person = participantById(bolao.picked);
-  const shirt = shirtById(shirtId);
-  if (!day || !person || !shirt || guessOf(day, person.id) || isResting(person.id, day)) return;
-  const ok = await askConfirm({
-    title: "Confirmar palpite?",
-    html: `${avatar(person, "is-sm")} <b>${escapeHtml(person.name)}</b> acha que vem <b>${escapeHtml(shirt.name)}</b>
-      em ${formatDate(day, { weekday: "long", day: "2-digit", month: "2-digit" })}.<br>
-      Vale ${money(GUESS_CENTS)} e <b>não dá para trocar nem excluir</b> depois.`,
-    media: shirtMedia(shirt),
-    ok: "Confirmar palpite",
-  });
-  if (!ok) return;
-  const done = await bolaoWrite(() => backend().placeGuess(day, person.id, shirtId), "Não foi possível registrar o palpite.");
-  if (done) bolao.picked = null;
-  await refreshBolao();
-  if (done) toast(`Palpite de ${person.name} registrado!`);
+// Passo 2: qual camisa (ainda não grava nada; o Pix do passo 3 é que confirma)
+function pickShirt(id) {
+  if (!bolao.picked || !shirtById(id)) return;
+  bolao.pickedShirt = bolao.pickedShirt === id ? null : id;
+  renderBolaoGuess();
 }
 
 // Chamado pelo app.js quando a camisa (ou a falta) do dia é registrada no calendário:
@@ -1297,7 +1379,8 @@ document.getElementById("bolao").addEventListener("click", (e) => {
   const hit = (sel) => t.closest(sel);
   let el;
   if ((el = hit("[data-person]"))) pickPerson(el.dataset.person);
-  else if ((el = hit("[data-guess]"))) placeGuess(el.dataset.guess);
+  else if ((el = hit("[data-shirt]"))) pickShirt(el.dataset.shirt);
+  else if (hit("#bolaoGuessPix")) openGuessPay();
   else if ((el = hit("[data-scope]"))) { bolao.scope = el.dataset.scope; renderBolaoRank(); playRankAnimation(); }
   else if ((el = hit("[data-pay]"))) openPay(el.dataset.pay);
   else if ((el = hit("[data-avatar-edit]"))) toggleAvatarGrid(el.dataset.avatarEdit);

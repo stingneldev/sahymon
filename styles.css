@@ -183,29 +183,25 @@ button, select, label, .card, .cal-day { -webkit-tap-highlight-color: transparen
   .auth-submit { height: 44px; margin-top: 2px; }
   .auth-foot { margin-top: 14px; padding-top: 10px; font-size: .7rem; }
   .auth .rain-drop:not(.rain-mystery) { font-size: calc(var(--size) * .8); }
-  .auth .rain-mystery { width: 52px; height: 52px; font-size: 1.7rem; }
+  .auth .rain-mystery { width: 52px; height: 52px; margin: -26px 0 0 -26px; font-size: 1.7rem; }
 }
 
-/* ---------- Chuva de emojis do login (login-rain.js) ---------- */
+/* ---------- Emojis do login (login-rain.js) ----------
+   Ficam atrás do cartão (z-index 0) e o Anime.js move cada um do ponto onde nasce
+   até a borda da tela. As margens negativas centralizam o emoji no ponto da rota. */
 .rain { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
-.rain-front { z-index: 2; }
 .rain-drop {
-  position: absolute; top: 0; left: var(--x); font-size: var(--size); line-height: 1; user-select: none;
-  will-change: transform; animation: rain-fall var(--dur) linear forwards;
-}
-@keyframes rain-fall {
-  from { transform: translate3d(0, -15vh, 0) rotate(0deg); }
-  to { transform: translate3d(var(--sway), 112vh, 0) rotate(var(--spin)); }
+  position: absolute; top: 0; left: 0; margin: -.5em 0 0 -.5em; font-size: var(--size); line-height: 1;
+  user-select: none; opacity: 0; will-change: transform, opacity;
 }
 .rain-mystery {
-  pointer-events: auto; display: grid; place-items: center; width: 60px; height: 60px; padding: 0;
-  border: 3px solid #fff; border-radius: 50%; color: #fff; font-size: 2rem; font-weight: 800;
+  pointer-events: auto; display: grid; place-items: center; width: 60px; height: 60px; padding: 0; margin: -30px 0 0 -30px;
+  border: 3px solid #fff; border-radius: 50%; color: #fff; font-size: 2rem; font-weight: 800; opacity: 1;
   background: radial-gradient(circle at 35% 30%, #fde68a, #f59e0b 55%, #b45309);
   text-shadow: 0 2px 4px rgba(120, 53, 15, .6);
-  animation: rain-fall var(--dur) linear forwards, mystery-glow .9s ease-in-out infinite alternate;
+  animation: mystery-glow .9s ease-in-out infinite alternate;
 }
 .rain-mystery span { display: block; animation: mystery-wobble 1.2s ease-in-out infinite; }
-.rain-mystery:hover, .rain-mystery:focus-visible { animation-play-state: paused; } /* para no lugar para dar tempo de clicar */
 .rain-mystery:focus-visible { outline: 3px solid var(--primary); outline-offset: 3px; }
 @keyframes mystery-glow {
   from { box-shadow: 0 0 0 0 rgba(245, 158, 11, .55), 0 6px 16px rgba(180, 83, 9, .35); }
@@ -216,13 +212,7 @@ button, select, label, .card, .cal-day { -webkit-tap-highlight-color: transparen
   50% { transform: rotate(12deg) scale(1.15); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .rain-drop { animation-name: rain-fall-calm; }
-  .rain-mystery { animation-name: rain-fall-calm, mystery-glow; }
   .rain-mystery span { animation: none; }
-}
-@keyframes rain-fall-calm {
-  from { transform: translate3d(0, -15vh, 0); }
-  to { transform: translate3d(0, 112vh, 0); }
 }
 
 /* ---------- Surpresa: imagem revelada ao clicar na interrogação ---------- */
@@ -579,13 +569,25 @@ button, select, label, .card, .cal-day { -webkit-tap-highlight-color: transparen
 }
 @media (hover: hover) { .bg-shirt:not(:disabled):hover { border-color: var(--primary); transform: translateY(-2px); box-shadow: var(--shadow); } }
 .bg-shirt:disabled { cursor: not-allowed; }
+.bg-shirt.is-picked { border-color: var(--primary); box-shadow: 0 0 0 4px var(--primary-soft); background: var(--primary-soft); }
+.bg-shirt.is-picked::after {
+  content: "✓"; position: absolute; top: 4px; right: 4px; z-index: 1; width: 22px; height: 22px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--primary); color: #fff; font-size: .75rem; font-weight: 800;
+}
+.bg-summary {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding: 8px 12px; border-radius: 12px;
+  background: var(--primary-soft); color: var(--text); font-size: .88rem;
+}
+.bg-go-pix { min-height: 46px; }
+.bg-go-pix:disabled { opacity: .45; cursor: not-allowed; }
+.bg-closed .bg-eyebrow { color: #b45309; }
 .bg-shirt:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .bg-media { position: relative; aspect-ratio: 1; border-radius: 8px; background: var(--surface-2); display: grid; place-items: center; overflow: hidden; }
 .bg-media:has(img) { background: #fff; }
 .bg-media img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; padding: 4px; }
 .bg-media .shirt-art { width: 80%; height: 80%; }
 .bg-name { font-size: .78rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bg-rule { margin-top: 10px; font-size: .78rem; color: var(--muted); }
+.bg-rule { margin-top: 10px; font-size: .78rem; color: var(--muted); line-height: 1.45; }
 .bg-note { padding: 12px 14px; border-radius: 12px; background: var(--surface-2); font-size: .9rem; }
 
 .bg-reveal { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }

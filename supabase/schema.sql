@@ -165,7 +165,8 @@ as $$
      and not public.bolao_month_closed(d)
 $$;
 
--- Dia que recebe palpites agora: hoje até o meio-dia, depois o próximo dia útil
+-- Dia que recebe palpites agora: só o próprio dia, das 00:00 ao meio-dia (Brasília).
+-- Fora disso (tarde, noite, fim de semana) não há palpite aberto: vazio (null).
 create or replace function public.bolao_guess_day()
 returns date
 language sql
@@ -173,8 +174,7 @@ stable
 security definer
 set search_path = public
 as $$
-  select case when extract(isodow from t) < 6 and public.bolao_day_open(t) then t
-              else public.bolao_next_weekday(t) end
+  select case when extract(isodow from t) < 6 and public.bolao_day_open(t) then t end
   from (select public.bolao_today() as t) x
 $$;
 
@@ -193,7 +193,9 @@ as $$
   )
 $$;
 
--- Único jeito de palpitar. Confere todas as regras e grava; não existe trocar nem excluir.
+-- Único jeito de palpitar: fecha o ciclo participante → camisa → Pix. Confere todas as
+-- regras, grava o palpite e o Pix de R$ 1,00 informado (o caixa confirma depois).
+-- Não existe trocar nem excluir; o participante só volta a palpitar no próximo dia, a partir das 00:00.
 create or replace function public.bolao_place_guess(p_day date, p_participant uuid, p_shirt text)
 returns void
 language plpgsql
@@ -206,8 +208,11 @@ begin
   if auth.uid() is null then
     raise exception 'Faça login para palpitar.';
   end if;
+  if d is null then
+    raise exception 'Os palpites de hoje já fecharam. Eles abrem de novo às 00:00 do próximo dia útil.';
+  end if;
   if p_day is distinct from d then
-    raise exception 'O horário virou: os palpites agora são para outro dia. Confira e tente de novo.';
+    raise exception 'O horário virou: confira o dia do palpite e tente de novo.';
   end if;
   if d > date '2027-12-31' then
     raise exception 'O bolão terminou junto com o calendário.';
@@ -228,6 +233,8 @@ begin
     raise exception 'Quem acertou no dia anterior descansa hoje.';
   end if;
   insert into bolao_guesses (day, participant_id, shirt_id) values (d, p_participant, p_shirt);
+  insert into bolao_payments (participant_id, month, amount_cents, confirmed)
+  values (p_participant, date_trunc('month', d::timestamp)::date, 100, false);
 end
 $$;
 
