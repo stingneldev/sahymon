@@ -207,10 +207,10 @@ const api = {
     const [participants, guesses, payments, expenses, closures, config] = await Promise.all([
       this.request("/rest/v1/bolao_participants?select=id,name,emoji,color,active,created_at&order=created_at.asc"),
       this.request("/rest/v1/rpc/bolao_guess_list"),
-      this.request("/rest/v1/bolao_payments?select=id,participant_id,month,amount_cents,created_at&order=created_at.asc"),
+      this.request("/rest/v1/bolao_payments?select=id,participant_id,month,amount_cents,confirmed,created_at&order=created_at.asc"),
       this.request("/rest/v1/bolao_expenses?select=id,month,description,amount_cents,created_at&order=created_at.asc"),
       this.request("/rest/v1/bolao_closures?select=month,prize_cents,winners"),
-      this.request("/rest/v1/bolao_config?select=pix_key"),
+      this.request("/rest/v1/bolao_config?select=pix_key,pix_name,pix_city"),
     ]);
     return { participants, guesses, payments, expenses, closures, config: config?.[0] };
   },
@@ -242,6 +242,13 @@ const api = {
     return this.request(`/rest/v1/bolao_payments?id=eq.${encodeURIComponent(id)}`, { method: "DELETE", prefer: "return=representation" });
   },
 
+  // O caixa confirma um pagamento informado pelo QR Code
+  confirmPayment(id) {
+    return this.request(`/rest/v1/bolao_payments?id=eq.${encodeURIComponent(id)}`, {
+      method: "PATCH", body: { confirmed: true }, prefer: "return=representation",
+    });
+  },
+
   addExpense(row) {
     return this.request("/rest/v1/bolao_expenses", { method: "POST", body: row, prefer: "return=minimal" });
   },
@@ -254,9 +261,10 @@ const api = {
     return this.request("/rest/v1/bolao_closures", { method: "POST", body: row, prefer: "return=minimal" });
   },
 
-  setPixKey(pixKey) {
+  // { pix_key, pix_name, pix_city }
+  setPixConfig(patch) {
     return this.request("/rest/v1/bolao_config?id=eq.true", {
-      method: "PATCH", body: { pix_key: pixKey }, prefer: "return=representation",
+      method: "PATCH", body: patch, prefer: "return=representation",
     });
   },
 

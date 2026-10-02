@@ -745,6 +745,7 @@ async function markShirt(id) {
   render();
   const run = absent ? 0 : computeStreaks().byDay[day] ?? 0;
   toast(run >= 2 ? `🔥 ${run} seguidas! Aguardando o próximo dia.` : "Registrado! Aguardando o próximo dia.");
+  bolaoAfterResult(day); // revela os palpites e atualiza resultado, caixa e ranking do bolão
 }
 
 async function unmarkDay(day) {
@@ -776,6 +777,7 @@ async function unmarkDay(day) {
   delete state.log[day];
   render();
   toast("Registro apagado");
+  refreshBolao();
 }
 
 async function deleteShirt(id) {
@@ -834,8 +836,7 @@ let pendingImg = null;
 
 // Enquanto uma janela está aberta, a página de trás não rola (importante no celular)
 function syncModalLock() {
-  const open = !$("#modal").classList.contains("hidden") || !$("#confirmModal").classList.contains("hidden");
-  document.body.classList.toggle("modal-open", open);
+  document.body.classList.toggle("modal-open", Boolean(document.querySelector(".modal:not(.hidden)")));
 }
 
 function openModal() {

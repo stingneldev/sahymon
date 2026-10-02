@@ -77,14 +77,17 @@ create table if not exists public.bolao_guesses (
   constraint bolao_guesses_weekday check (extract(isodow from day) < 6)
 );
 
--- Pagamentos recebidos (valores em centavos; month = dia 1 do mês)
+-- Pagamentos (valores em centavos; month = dia 1 do mês).
+-- Quem paga pelo QR Code "informa" (confirmed = false); o caixa confere o extrato e confirma.
 create table if not exists public.bolao_payments (
   id              uuid primary key default gen_random_uuid(),
   participant_id  uuid not null references public.bolao_participants (id) on delete restrict,
   month           date not null check (extract(day from month) = 1),
   amount_cents    integer not null check (amount_cents between 1 and 100000),
+  confirmed       boolean not null default true,
   created_at      timestamptz not null default now()
 );
+alter table public.bolao_payments add column if not exists confirmed boolean not null default true;
 
 -- Gastos do caixa com o lanche
 create table if not exists public.bolao_expenses (
@@ -104,11 +107,15 @@ create table if not exists public.bolao_closures (
   closed_by    uuid default auth.uid()
 );
 
--- Chave Pix do caixa (uma linha só)
+-- Pix do caixa (uma linha só): chave, nome de quem recebe e cidade, usados no QR Code
 create table if not exists public.bolao_config (
-  id       boolean primary key default true check (id),
-  pix_key  text not null default '' check (char_length(pix_key) <= 77)
+  id        boolean primary key default true check (id),
+  pix_key   text not null default '' check (char_length(pix_key) <= 77),
+  pix_name  text not null default '' check (char_length(pix_name) <= 25),
+  pix_city  text not null default '' check (char_length(pix_city) <= 15)
 );
+alter table public.bolao_config add column if not exists pix_name text not null default '' check (char_length(pix_name) <= 25);
+alter table public.bolao_config add column if not exists pix_city text not null default '' check (char_length(pix_city) <= 15);
 
 -- ---------- Funções do bolão ----------
 
@@ -119,12 +126,12 @@ language sql
 stable
 as $$ select (now() at time zone 'America/Sao_Paulo')::date $$;
 
--- Palpites de um dia fecham às 11:00 (horário de Brasília)
+-- Palpites de um dia fecham ao meio-dia (horário de Brasília); a aula começa às 13:00
 create or replace function public.bolao_cutoff(d date)
 returns timestamptz
 language sql
 stable
-as $$ select (d + time '11:00') at time zone 'America/Sao_Paulo' $$;
+as $$ select (d + time '12:00') at time zone 'America/Sao_Paulo' $$;
 
 create or replace function public.bolao_prev_weekday(d date)
 returns date
@@ -146,7 +153,7 @@ security definer
 set search_path = public
 as $$ select exists (select 1 from public.bolao_closures where month = date_trunc('month', d::timestamp)::date) $$;
 
--- Dia aberto: antes das 11:00, sem camisa registrada e com o mês ainda aberto
+-- Dia aberto: antes do meio-dia, sem camisa registrada e com o mês ainda aberto
 create or replace function public.bolao_day_open(d date)
 returns boolean
 language sql
@@ -159,7 +166,7 @@ as $$
      and not public.bolao_month_closed(d)
 $$;
 
--- Dia que recebe palpites agora: hoje até as 11:00, depois o próximo dia útil
+-- Dia que recebe palpites agora: hoje até o meio-dia, depois o próximo dia útil
 create or replace function public.bolao_guess_day()
 returns date
 language sql
@@ -271,6 +278,7 @@ grant select, insert, update on public.settings           to authenticated;
 grant select, insert, update on public.bolao_participants to authenticated;  -- sem delete: desativa
 -- bolao_guesses: nenhum acesso direto. Palpitar = bolao_place_guess(); ler = bolao_guess_list().
 grant select, insert, delete on public.bolao_payments     to authenticated;
+grant update (confirmed)     on public.bolao_payments     to authenticated;  -- só confirmar um pagamento informado
 grant select, insert, delete on public.bolao_expenses     to authenticated;
 grant select, insert         on public.bolao_closures     to authenticated;  -- reabrir um mês: só pelo SQL Editor
 grant select, update         on public.bolao_config       to authenticated;
@@ -313,7 +321,10 @@ create policy bolao_participants_update on public.bolao_participants for update 
 drop policy if exists bolao_payments_select on public.bolao_payments;
 drop policy if exists bolao_payments_insert on public.bolao_payments;
 drop policy if exists bolao_payments_delete on public.bolao_payments;
+drop policy if exists bolao_payments_update on public.bolao_payments;
 create policy bolao_payments_select on public.bolao_payments for select to authenticated using (true);
+create policy bolao_payments_update on public.bolao_payments for update to authenticated
+  using (not public.bolao_month_closed(month)) with check (not public.bolao_month_closed(month));
 create policy bolao_payments_insert on public.bolao_payments for insert to authenticated
   with check (not public.bolao_month_closed(month));
 create policy bolao_payments_delete on public.bolao_payments for delete to authenticated

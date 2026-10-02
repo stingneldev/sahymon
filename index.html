@@ -99,14 +99,15 @@
         <div class="stat"><span class="stat-value stat-value-sm" id="statFav">—</span><span class="stat-label">Camisa favorita</span></div>
       </section>
 
-      <!-- Bolão do lanche (bolao.js) — some sozinho se o banco ainda não tiver as tabelas -->
+      <!-- Bolão do lanche (bolao.js) — sem as tabelas no banco, abre em modo demonstração -->
       <section class="panel bolao hidden" id="bolao">
         <div class="panel-head">
           <div>
             <h2>🎯 Bolão do lanche</h2>
-            <p class="muted">R$ 1 por palpite, até as 11:00. Quem acerta descansa no dia seguinte. O caixa paga o lanche e a sobra do mês vai para quem fizer mais pontos.</p>
+            <p class="muted">R$ 1 por palpite, até o meio-dia. Quem acerta descansa no dia seguinte. O caixa paga o lanche e a sobra do mês vai para quem fizer mais pontos.</p>
           </div>
         </div>
+        <div class="bolao-demo hidden" id="bolaoDemo" role="status"></div>
         <div class="bolao-layout">
           <div class="bolao-guess" id="bolaoGuess"></div>
           <div class="bolao-month">
@@ -230,6 +231,17 @@
     </div>
   </div>
 
+  <!-- ============ MODAL: pagar o bolão (QR Code Pix) ============ -->
+  <div id="payModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="payTitle">
+    <div class="modal-card pay-card">
+      <div class="modal-head">
+        <h3 id="payTitle">💳 Pagar o bolão</h3>
+        <button class="icon-btn" data-pay-close type="button" aria-label="Fechar">✕</button>
+      </div>
+      <div id="payBody"></div>
+    </div>
+  </div>
+
   <!-- ============ SURPRESA (interrogação da tela de login) ============ -->
   <div id="surprise" class="surprise hidden" role="dialog" aria-modal="true" aria-labelledby="surpriseTitle">
     <div class="surprise-rays" aria-hidden="true"></div>
@@ -245,6 +257,8 @@
 
   <script src="config.js"></script>
   <script src="api.js"></script>
+  <script src="assets/vendor/qrcode.js"></script>
+  <script src="pix.js"></script>
   <script src="bolao.js"></script>
   <script src="app.js"></script>
   <script src="assets/vendor/anime.umd.min.js"></script>
