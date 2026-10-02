@@ -35,15 +35,20 @@
         <span>Esquilook</span>
       </div>
       <p class="auth-sub">O diário de looks do esquilo: registre a camisa do dia e descubra a favorita.</p>
+      <p class="auth-divider"><span>Acesse sua conta</span></p>
 
-      <form id="authForm" class="form" method="post" autocomplete="on">
+      <form id="authForm" class="form auth-form" method="post" autocomplete="on">
         <label class="field">
           <span>Usuário</span>
-          <input id="authUser" type="text" required minlength="3" maxlength="24" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="next" placeholder="usuário" />
+          <span class="input-wrap">
+            <svg class="input-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-3.5 4.5-5 8-5s6.5 1.5 8 5"/></svg>
+            <input id="authUser" type="text" required minlength="3" maxlength="24" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="next" placeholder="Seu usuário" />
+          </span>
         </label>
         <div class="field">
           <label for="authPass">Senha</label>
-          <div class="pass-wrap">
+          <div class="pass-wrap input-wrap">
+            <svg class="input-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></svg>
             <input id="authPass" type="password" required minlength="4" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="go" placeholder="••••••" />
             <button id="togglePass" class="pass-toggle" type="button" aria-label="Mostrar senha" aria-pressed="false" title="Mostrar senha">
               <svg class="eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -51,9 +56,14 @@
             </button>
           </div>
         </div>
-        <p id="authError" class="form-error"></p>
-        <button id="authSubmit" class="btn btn-primary btn-block" type="submit">Entrar</button>
+        <p id="authError" class="form-error" role="alert"></p>
+        <button id="authSubmit" class="btn btn-primary btn-block auth-submit" type="submit">Entrar</button>
       </form>
+
+      <p class="auth-foot">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>
+        Acesso restrito · conexão segura
+      </p>
     </div>
   </section>
 

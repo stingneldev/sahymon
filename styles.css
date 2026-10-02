@@ -41,8 +41,8 @@ button, select, label, .card, .cal-day { -webkit-tap-highlight-color: transparen
 /* ---------- Brand ---------- */
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: -.02em; font-size: 1.1rem; }
 .brand-logo { width: 40px; height: 40px; object-fit: contain; filter: drop-shadow(0 2px 4px rgba(15,23,42,.15)); }
-.auth-brand { display: flex; flex-direction: column; align-items: center; gap: 6px; font-weight: 800; font-size: 1.6rem; letter-spacing: -.02em; }
-.auth-logo { width: 132px; height: 132px; object-fit: contain; margin-top: -76px; filter: drop-shadow(0 10px 18px rgba(30,58,138,.25)); }
+.auth-brand { display: flex; flex-direction: column; align-items: center; gap: 4px; font-weight: 800; font-size: 1.75rem; letter-spacing: -.03em; line-height: 1.2; }
+.auth-logo { width: 124px; height: 124px; object-fit: contain; margin-top: -84px; filter: drop-shadow(0 14px 22px rgba(30,58,138,.28)); }
 
 /* ---------- Buttons ---------- */
 .btn {
@@ -101,12 +101,71 @@ button, select, label, .card, .cal-day { -webkit-tap-highlight-color: transparen
     radial-gradient(800px 500px at 110% 110%, #fae8ff 0%, transparent 60%),
     var(--bg);
 }
+/* Cartão de vidro fosco: a chuva de emojis aparece desfocada por trás */
 .auth-card {
   position: relative; z-index: 1; /* acima da chuva de emojis */
-  width: min(100%, 400px); min-width: 0; background: var(--surface); border: 1px solid var(--border);
-  border-radius: 20px; padding: 36px 32px; margin-top: 60px; box-shadow: var(--shadow);
+  width: min(100%, 420px); min-width: 0; padding: 36px 36px 24px; margin-top: 64px;
+  background: rgba(255, 255, 255, .86); border: 1px solid rgba(255, 255, 255, .9); border-radius: 24px;
+  -webkit-backdrop-filter: blur(18px) saturate(1.4); backdrop-filter: blur(18px) saturate(1.4);
+  box-shadow:
+    0 0 0 1px rgba(15, 23, 42, .05),
+    0 1px 2px rgba(15, 23, 42, .04),
+    0 12px 32px -8px rgba(15, 23, 42, .12),
+    0 40px 80px -24px rgba(49, 46, 129, .28);
 }
-.auth-sub { text-align: center; color: var(--muted); margin: 12px 0 24px; font-size: .95rem; }
+.auth-card::before { /* filete de destaque no topo */
+  content: ""; position: absolute; top: -1px; left: 28px; right: 28px; height: 3px; border-radius: 0 0 4px 4px;
+  background: linear-gradient(90deg, transparent, var(--primary) 30%, #8b5cf6 70%, transparent);
+}
+.auth-sub { text-align: center; color: var(--muted); margin: 8px auto 0; max-width: 32ch; font-size: .925rem; line-height: 1.55; }
+.auth-divider {
+  display: flex; align-items: center; gap: 12px; margin: 24px 0 20px;
+  color: #94a3b8; font-size: .7rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase;
+}
+.auth-divider::before, .auth-divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+
+.auth-form { gap: 16px; }
+.auth-form .field > span:first-child, .auth-form .field > label { font-size: .8125rem; font-weight: 600; color: #334155; }
+.input-wrap { position: relative; display: flex; }
+.input-icon {
+  position: absolute; left: 14px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; pointer-events: none;
+  fill: none; stroke: #94a3b8; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; transition: stroke .15s;
+}
+.input-wrap:focus-within .input-icon { stroke: var(--primary); }
+.auth-form .field input[type="text"], .auth-form .field input[type="password"] {
+  flex: 1; height: 48px; padding: 0 14px 0 42px; border: 1px solid #e2e8f0; border-radius: 12px;
+  background: #f8fafc; transition: border-color .15s, box-shadow .15s, background .15s;
+}
+.auth-form .field input::placeholder { color: #a3adbd; }
+.auth-form .field input:hover { border-color: #cbd5e1; }
+.auth-form .field input:focus { background: #fff; border-color: var(--primary); box-shadow: 0 0 0 4px rgba(79, 70, 229, .12); }
+
+.auth-form .form-error:empty { display: none; }
+.auth-form .form-error {
+  display: flex; align-items: flex-start; gap: 8px; min-height: 0; padding: 10px 12px; border-radius: 10px;
+  background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; font-weight: 500; animation: fade .2s;
+}
+.auth-form .form-error::before { content: "!"; flex: none; display: grid; place-items: center; width: 18px; height: 18px; margin-top: 1px; border-radius: 50%; background: #dc2626; color: #fff; font-size: .7rem; font-weight: 800; }
+
+.auth-submit {
+  position: relative; height: 48px; margin-top: 4px; border-radius: 12px; font-size: .975rem; letter-spacing: .01em;
+  background: linear-gradient(180deg, #5b54f0, var(--primary-600));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2), 0 1px 2px rgba(15, 23, 42, .12), 0 10px 22px -8px rgba(79, 70, 229, .6);
+  transition: transform .15s, box-shadow .15s, filter .15s;
+}
+.auth-submit::after { content: "→"; transition: transform .15s; }
+.auth-submit:hover { filter: brightness(1.06); transform: translateY(-1px); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2), 0 2px 4px rgba(15, 23, 42, .12), 0 14px 28px -8px rgba(79, 70, 229, .65); }
+.auth-submit:hover::after { transform: translateX(3px); }
+.auth-submit:active { transform: translateY(0); }
+.auth-submit:focus-visible { outline: none; box-shadow: 0 0 0 4px rgba(79, 70, 229, .25), 0 10px 22px -8px rgba(79, 70, 229, .6); }
+.auth-submit:disabled { cursor: progress; filter: saturate(.7); opacity: .85; transform: none; }
+.auth-submit:disabled::after { content: none; }
+
+.auth-foot {
+  display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 24px; padding-top: 18px;
+  border-top: 1px solid var(--border); color: #94a3b8; font-size: .75rem; font-weight: 500;
+}
+.auth-foot svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ---------- Chuva de emojis do login (login-rain.js) ---------- */
 .rain { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
@@ -559,6 +618,6 @@ body.modal-open { overflow: hidden; }
   .cal-fire { font-size: .55rem; padding: 0 3px; line-height: 13px; }
   .grid { gap: 10px; }
   .card { padding: 8px; }
-  .auth-card { padding: 28px 20px; }
+  .auth-card { padding: 32px 20px 20px; }
   .row { flex-direction: column; align-items: stretch; }
 }
