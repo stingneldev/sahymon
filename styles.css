@@ -616,7 +616,9 @@ button, select, label, .card, .cal-day { -webkit-tap-highlight-color: transparen
 .bm-closed span { color: #78350f; }
 
 /* Ranking */
-.bolao-rank { margin-top: 20px; padding: 18px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
+.bolao-rank { margin-top: 20px; padding: 18px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); overflow: hidden; }
+/* Antes de o ranking aparecer na tela, as posições esperam escondidas pela animação (bolao.js) */
+.br-wait .br-row, .br-wait .br-step { opacity: 0; }
 .bolao-rank .rank-empty-icon .ico { margin: 0 auto; }
 .br-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
 .br-head h3 { font-size: 1.05rem; letter-spacing: -.01em; }
@@ -703,6 +705,7 @@ button, select, label, .card, .cal-day { -webkit-tap-highlight-color: transparen
 .bw-label { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: #047857; }
 .bw-value { font-size: 2.1rem; font-weight: 800; letter-spacing: -.03em; line-height: 1.1; color: #064e3b; }
 .bw-value.is-neg { color: #b91c1c; }
+.bw-value #bolaoBalance { font-variant-numeric: tabular-nums; } /* largura fixa dos dígitos durante a contagem */
 .bw-hint { font-size: .74rem; color: var(--muted); }
 .bw-flow { list-style: none; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
 .bw-flow li { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; border-bottom: 1px dashed #bbf7d0; font-size: .82rem; }
@@ -769,6 +772,11 @@ button, select, label, .card, .cal-day { -webkit-tap-highlight-color: transparen
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%) rotate(-14deg); padding: 4px 10px; border-radius: 8px;
   background: #f59e0b; color: #fff; font-size: .78rem; font-weight: 800; letter-spacing: .08em; box-shadow: 0 4px 10px rgba(180, 83, 9, .35);
 }
+/* QR Code 3D (bolao.js + assets/vendor/qr3d.js): os cubos formam o código e o SVG aparece no fim */
+.pay-qr svg, .pay-qr-tag { transition: opacity .45s ease; }
+.pay-qr.is-forming svg, .pay-qr.is-forming .pay-qr-tag { opacity: 0; }
+.pay-qr-3d { position: absolute; left: 10px; top: 10px; pointer-events: none; transition: opacity .45s ease; }
+.pay-qr.is-formed .pay-qr-3d { opacity: 0; }
 .pay-qr-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .pay-value { font-size: 1.8rem; font-weight: 800; letter-spacing: -.02em; color: var(--primary); }
 .pay-warn { margin-top: 6px; padding: 6px 8px; border-radius: 8px; background: #fffbeb; color: #92400e; font-size: .76rem; }

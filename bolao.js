@@ -123,56 +123,16 @@ function demoId() {
   return `${h()}${h()}-${h()}-4${h().slice(1)}-8${h().slice(1)}-${h()}${h()}${h()}`;
 }
 
-// Um mês de exemplo: 20 dias úteis de palpites, pagamentos e gastos. Os dias que já
-// têm camisa registrada no calendário de verdade usam o resultado real.
+// Demonstração começa zerada, como o banco de verdade: só os participantes, sem
+// palpites, pagamentos nem compras. O que for feito na tela fica na memória até recarregar.
 function makeDemo() {
-  let seed = 20261001;
-  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  const shirts = state.shirts.map((s) => s.id);
   const people = DEMO_PEOPLE.map(([name, color], i) => ({
     id: `00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`, name, color, active: true,
   }));
-  const results = {};
-  const guesses = [];
-  const days = [];
-  for (let d = todayKey(), i = 0; i < 20; i++) days.unshift((d = stepWeekday(d, -1)));
-
-  days.forEach((day, i) => {
-    const result = state.log[day] ?? (rnd() < 0.08 || !shirts.length ? ABSENT : shirts[Math.floor(rnd() ** 1.7 * shirts.length)]);
-    if (!state.log[day]) results[day] = result;
-    if (!shirts.length) return;
-    for (const p of people) {
-      const prev = guesses.find((g) => g.day === days[i - 1] && g.participant_id === p.id);
-      if (prev && prev.shirt_id === (state.log[days[i - 1]] ?? results[days[i - 1]])) continue; // acertou ontem: descansa
-      if (rnd() < 0.12) continue; // esqueceu de palpitar
-      const shirt = result !== ABSENT && rnd() < 0.33 ? result : shirts[Math.floor(rnd() * shirts.length)];
-      guesses.push({ day, participant_id: p.id, shirt_id: shirt });
-    }
-  });
-
-  // Dia aberto: dois participantes já palpitaram (quem acertou na véspera descansa)
-  const open = guessDay();
-  if (open && shirts.length) {
-    const prevDay = stepWeekday(open, -1);
-    const prevResult = state.log[prevDay] ?? results[prevDay];
-    const awake = people.filter((p) => !guesses.some((g) => g.day === prevDay && g.participant_id === p.id && g.shirt_id === prevResult));
-    for (const p of awake.slice(0, 2)) guesses.push({ day: open, participant_id: p.id, shirt_id: shirts[Math.floor(rnd() * shirts.length)] });
-  }
-
-  const month = `${monthOf(days.at(-1))}-01`;
-  const at = (i) => new Date(Date.now() - i * 864e5).toISOString();
-  const payments = [
-    { id: demoId(), participant_id: people[0].id, month, amount_cents: 1000, confirmed: true, created_at: at(9) },
-    { id: demoId(), participant_id: people[1].id, month, amount_cents: 1200, confirmed: true, created_at: at(7) },
-    { id: demoId(), participant_id: people[2].id, month, amount_cents: 800, confirmed: true, created_at: at(5) },
-    { id: demoId(), participant_id: people[4].id, month, amount_cents: 900, confirmed: true, created_at: at(3) },
-    { id: demoId(), participant_id: people[3].id, month, amount_cents: 300, confirmed: false, created_at: at(1) },
-  ];
-  const expenses = [
-    { id: demoId(), month, description: "Pão de queijo e suco", amount_cents: 1850, created_at: at(5) },
-    { id: demoId(), month, description: "Frutas da feira", amount_cents: 1200, created_at: at(2) },
-  ];
-  return { participants: people, guesses, payments, expenses, closures: [], config: { pix_key: "", pix_name: "", pix_city: "" }, results, firstDay: days[0] };
+  return {
+    participants: people, guesses: [], payments: [], expenses: [], closures: [],
+    config: { pix_key: "", pix_name: "", pix_city: "" }, results: {}, firstDay: CAL_START,
+  };
 }
 
 // Retrato da demonstração no mesmo formato do banco (camisas escondidas nos dias abertos)
@@ -412,9 +372,9 @@ function renderBolao() {
   $("#bolaoDemo").classList.toggle("hidden", !bolao.demo);
   $("#bolaoDemo").innerHTML = bolao.demo
     ? `<strong>${icon("eye")}Modo demonstração</strong>
-       <span>O bolão ainda não foi ativado no banco de dados. Participantes, palpites e pagamentos abaixo são
-       de exemplo e nada é salvo: ao recarregar a página, tudo volta ao início. A camisa registrada no
-       calendário é real e já entra no resultado.</span>`
+       <span>O bolão ainda não foi ativado no banco de dados. Tudo começa zerado e dá para testar à vontade,
+       mas nada é salvo: ao recarregar a página, volta ao zero. A camisa registrada no calendário é real e
+       já entra no resultado.</span>`
     : "";
   bolao.month = clampMonth(bolao.month ?? monthOf(todayKey()));
   renderBolaoHero();
@@ -479,7 +439,7 @@ function renderBolaoWallet() {
         <span class="bw-icon">${icon("wallet")}</span>
         <div class="bw-text">
           <span class="bw-label">Saldo do caixa</span>
-          <strong class="bw-value ${w.balance < 0 ? "is-neg" : ""}">${money(w.balance)}</strong>
+          <strong class="bw-value ${w.balance < 0 ? "is-neg" : ""}" aria-label="${money(w.balance)}"><span class="bw-cur">R$</span> <span id="bolaoBalance" aria-hidden="true">${formatBalance(walletMotion.visible ? walletMotion.current : 0)}</span></strong>
           <span class="bw-hint">Saldo fictício controlado pelo app: o dinheiro de verdade fica na conta Pix do caixa.</span>
         </div>
       </div>
@@ -500,6 +460,61 @@ function renderBolaoWallet() {
           <b class="${m.cents < 0 ? "is-out" : "is-in"}">${signed(m.cents)}</b></li>`).join("")}
       </ul>
     </details>` : ""}`;
+
+  // Se o saldo mudou (compra, pagamento) ou a tela foi redesenhada no meio da contagem, conta até o valor novo
+  if (walletMotion.visible && Math.round(walletMotion.current * 100) !== w.balance) countBalance(w.balance, walletMotion.current);
+}
+
+/* ---------------- Animação do saldo ---------------- */
+// Anime.js, utils.roundPad: o saldo "carrega" contando de R$ 0,00 até o valor do caixa,
+// sempre com 2 casas decimais. Quando o saldo muda, conta do valor antigo até o novo.
+const walletMotion = { visible: false, current: 0, anim: null };
+
+// 1234.5 -> "1.234,50" (roundPad garante as 2 casas; aqui só vira o formato brasileiro)
+function formatBalance(reais) {
+  const fixed = window.anime?.utils?.roundPad ? window.anime.utils.roundPad(reais, 2) : Number(reais).toFixed(2);
+  const [int, dec = "00"] = String(fixed).split(".");
+  return `${int.replace(/\B(?=(\d{3})+(?!\d))/g, ".")},${dec}`;
+}
+
+function countBalance(toCents, fromReais) {
+  const el = document.getElementById("bolaoBalance");
+  if (!el) return;
+  const to = toCents / 100;
+  const lib = window.anime;
+  walletMotion.anim?.pause();
+  if (!lib?.animate || !lib?.utils?.roundPad || fromReais === to || matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    walletMotion.current = to;
+    el.textContent = formatBalance(to);
+    return;
+  }
+  walletMotion.anim = lib.animate(el, {
+    innerHTML: [fromReais, to],
+    modifier: (v) => {
+      walletMotion.current = Number(v);
+      return formatBalance(v);
+    },
+    duration: 1600,
+    ease: "out(3)",
+  });
+}
+
+// Conta a partir do zero sempre que o saldo aparece na tela (ao abrir o bolão ou rolar até ele)
+if ("IntersectionObserver" in window) {
+  new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (e.isIntersecting && !walletMotion.visible && document.getElementById("bolaoBalance")) {
+        walletMotion.visible = true;
+        walletMotion.current = 0;
+        countBalance(walletStats().balance, 0);
+      } else if (!e.isIntersecting && walletMotion.visible) {
+        walletMotion.visible = false;
+        walletMotion.anim?.pause();
+      }
+    }
+  }, { threshold: 0.3 }).observe(document.getElementById("bolaoWallet"));
+} else {
+  walletMotion.visible = true;
 }
 
 /* ---------------- Compra do lanche ---------------- */
@@ -828,6 +843,8 @@ function closePay() {
   if ($("#payModal").classList.contains("hidden")) return;
   $("#payModal").classList.add("hidden");
   syncModalLock();
+  stopQr3d();
+  qr3d.payload = null; // ao abrir de novo, o QR Code se forma outra vez
 }
 
 function renderPay() {
@@ -872,7 +889,7 @@ function renderPay() {
       </div>
       <p class="pay-fixed">${icon("coin")}Cada Pix vale <b>${money(GUESS_CENTS)}</b>, o valor de um palpite.</p>
       <div class="pay-qr-wrap">
-        <div class="pay-qr ${symbolic ? "is-symbolic" : ""}">${pixQrSvg(payload, `QR Code Pix de ${money(pay.cents)}`)}${symbolic ? `<span class="pay-qr-tag">SIMBÓLICO</span>` : ""}</div>
+        <div class="pay-qr ${symbolic ? "is-symbolic" : ""} ${qr3d.payload === payload ? "is-formed" : "is-forming"}" data-payload="${escapeHtml(payload)}">${pixQrSvg(payload, `QR Code Pix de ${money(pay.cents)}`)}${symbolic ? `<span class="pay-qr-tag">SIMBÓLICO</span>` : ""}</div>
         <div class="pay-qr-info">
           <span class="pay-value">${money(pay.cents)}</span>
           <span class="muted">para ${escapeHtml(pix.name || "o caixa do lanche")}</span>
@@ -891,6 +908,58 @@ function renderPay() {
       <button class="btn btn-primary btn-block" data-pay-sent type="button">${icon("check")}Já fiz o Pix</button>`;
   }
   $("#payBody").innerHTML = html;
+  formPayQr();
+}
+
+/* ---------------- QR Code 3D ---------------- */
+// Os quadradinhos do QR Code viram cubos 3D que voam até o lugar e formam o código
+// (assets/vendor/qr3d.js: Three.js + adaptador de Three.js do Anime.js, fonte em build/).
+// No fim aparece o SVG nítido, que é o que o app do banco lê. Sem WebGL, ou para quem
+// desativou animações, o QR Code aparece direto.
+const qr3d = { payload: null, run: null, box: null, module: null };
+
+function stopQr3d() {
+  qr3d.run?.stop();
+  qr3d.run = null;
+  qr3d.box = null;
+}
+
+function showFormedQr(box) {
+  box.classList.remove("is-forming");
+  box.classList.add("is-formed");
+}
+
+async function formPayQr() {
+  const box = document.querySelector("#payBody .pay-qr");
+  if (qr3d.box && qr3d.box !== box) stopQr3d(); // a tela foi redesenhada ou mudou de passo
+  if (!box) return;
+  const payload = box.dataset.payload;
+  if (qr3d.payload === payload) { showFormedQr(box); return; } // já formado para este código
+  qr3d.payload = payload;
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches || typeof qrcode !== "function") { showFormedQr(box); return; }
+
+  try {
+    qr3d.module ??= await import("./assets/vendor/qr3d.js");
+    if (!box.isConnected || box.dataset.payload !== qr3d.payload) return; // trocou de tela enquanto carregava
+    const qr = qrcode(0, "M");
+    qr.addData(payload);
+    qr.make();
+    const size = qr.getModuleCount();
+    const cells = [];
+    for (let r = 0; r < size; r++) for (let c = 0; c < size; c++) if (qr.isDark(r, c)) cells.push([r, c]);
+    const pixels = Math.round(box.querySelector("svg").getBoundingClientRect().width);
+    qr3d.box = box;
+    qr3d.run = qr3d.module.formQr(box, {
+      cells, size, pixels,
+      onDone: () => {
+        showFormedQr(box);
+        setTimeout(() => { if (qr3d.box === box) stopQr3d(); }, 500); // depois do esmaecer, libera a placa de vídeo
+      },
+    });
+  } catch (ex) {
+    console.warn("QR Code 3D indisponível; mostrando o QR Code direto.", ex);
+    showFormedQr(box);
+  }
 }
 
 async function paySent() {
@@ -1139,6 +1208,61 @@ function moveBolaoMonth(delta) {
   renderBolaoAdmin();
 }
 
+/* ---------------- Animação do ranking ---------------- */
+// Anime.js, "time staggering": delay e duration crescem a cada posição. Quando o ranking
+// aparece na tela, a 1ª posição chega primeiro e mais rápido; as seguintes, um pouco
+// depois e mais devagar, cada uma até o seu lugar. O pódio sobe a partir do 1º lugar.
+const rankMotion = { seen: false };
+
+function playRankAnimation() {
+  const box = $("#bolaoRank");
+  const lib = window.anime;
+  const steps = [...box.querySelectorAll(".br-step")];
+  const rows = [...box.querySelectorAll(".br-row")];
+  const canAnimate = lib?.animate && lib?.stagger && !matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // Começa invisível para não piscar na posição final antes de deslizar
+  if (canAnimate) [...steps, ...rows].forEach((el) => { el.style.opacity = "0"; });
+  box.classList.remove("br-wait");
+  if (!canAnimate) return;
+
+  const { animate, stagger } = lib;
+  if (steps.length) {
+    animate(steps, {
+      y: ["3rem", "0rem"],
+      opacity: [0, 1],
+      delay: stagger(100, { from: "center" }),
+      duration: stagger(200, { start: 500, from: "center" }),
+      ease: "out(3)",
+    });
+  }
+  if (rows.length) {
+    animate(rows, {
+      x: ["-17rem", "0rem"],
+      opacity: [0, 1],
+      delay: stagger(100, { start: steps.length ? 250 : 0 }),
+      duration: stagger(200, { start: 500 }),
+      ease: "out(3)",
+    });
+  }
+}
+
+// Dispara ao rolar até o ranking; ao sair da tela, fica pronta para tocar de novo
+if ("IntersectionObserver" in window) {
+  const box = document.getElementById("bolaoRank");
+  box.classList.add("br-wait");
+  new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (e.isIntersecting && !rankMotion.seen) {
+        rankMotion.seen = true;
+        playRankAnimation();
+      } else if (!e.isIntersecting && rankMotion.seen) {
+        rankMotion.seen = false;
+        box.classList.add("br-wait");
+      }
+    }
+  }, { threshold: 0.15 }).observe(box);
+}
+
 /* ---------------- Eventos ---------------- */
 
 document.getElementById("bolao").addEventListener("click", (e) => {
@@ -1147,7 +1271,7 @@ document.getElementById("bolao").addEventListener("click", (e) => {
   let el;
   if ((el = hit("[data-person]"))) pickPerson(el.dataset.person);
   else if ((el = hit("[data-guess]"))) placeGuess(el.dataset.guess);
-  else if ((el = hit("[data-scope]"))) { bolao.scope = el.dataset.scope; renderBolaoRank(); }
+  else if ((el = hit("[data-scope]"))) { bolao.scope = el.dataset.scope; renderBolaoRank(); playRankAnimation(); }
   else if ((el = hit("[data-pay]"))) openPay(el.dataset.pay);
   else if ((el = hit("[data-avatar-edit]"))) toggleAvatarGrid(el.dataset.avatarEdit);
   else if ((el = hit("[data-color-set]"))) pickColor(el.dataset.colorSet);

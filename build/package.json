@@ -1,0 +1,14 @@
+{
+  "name": "esquilook-qr3d-build",
+  "private": true,
+  "type": "module",
+  "description": "Gera assets/vendor/qr3d.js (QR Code 3D do pagamento: Anime.js + adaptador de Three.js)",
+  "scripts": {
+    "build": "esbuild qr3d.src.js --bundle --format=esm --minify --target=es2020 --legal-comments=eof --outfile=../assets/vendor/qr3d.js"
+  },
+  "devDependencies": {
+    "animejs": "4.5.0",
+    "esbuild": "0.28.2",
+    "three": "0.186.1"
+  }
+}
