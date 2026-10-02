@@ -617,6 +617,12 @@ button, select, label, .card, .cal-day { -webkit-tap-highlight-color: transparen
 
 /* Ranking */
 .bolao-rank { margin-top: 20px; padding: 18px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); overflow: hidden; }
+.br-symbolic {
+  display: flex; align-items: flex-start; gap: 6px; margin: -6px 0 14px; padding: 8px 12px; border-radius: 10px;
+  background: repeating-linear-gradient(135deg, #fffbeb 0 12px, #fef3c7 12px 24px); border: 1px dashed #f59e0b;
+  color: #78350f; font-size: .82rem;
+}
+.br-symbolic .ico { margin-top: .1em; color: #92400e; }
 /* Antes de o ranking aparecer na tela, as posições esperam escondidas pela animação (bolao.js) */
 .br-wait .br-row, .br-wait .br-step { opacity: 0; }
 .bolao-rank .rank-empty-icon .ico { margin: 0 auto; }

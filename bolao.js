@@ -652,11 +652,36 @@ function renderReveal() {
     </div>`;
 }
 
+// Ranking simbólico: só no modo demonstração e só enquanto ninguém tem pontos de verdade.
+// Pontos de exemplo para dar para ver o efeito da animação; não entram no saldo nem no caixa.
+function symbolicRanking() {
+  const sample = [
+    { hits: 7, charged: 9, voids: 2, move: 1, last: ["hit", "miss", "void", "hit", "hit"], badges: [["crown", "Líder em pontos"], ["target", "Mira afiada: melhor aproveitamento"]] },
+    { hits: 6, charged: 9, voids: 1, move: -1, last: ["hit", "hit", "miss", "void", "hit"], badges: [["pause", "Acertou e descansa no próximo palpite"]] },
+    { hits: 5, charged: 10, voids: 1, move: 2, last: ["miss", "hit", "hit", "miss", "hit"], badges: [] },
+    { hits: 4, charged: 9, voids: 0, move: 0, last: ["miss", "hit", "miss", "hit", "miss"], badges: [] },
+    { hits: 3, charged: 10, voids: 1, move: -2, last: ["miss", "void", "miss", "hit", "miss"], badges: [] },
+    { hits: 2, charged: 11, voids: 0, move: 0, last: ["absent", "miss", "miss", "miss", "miss"], badges: [["heart", "Fiel ao bolão: mais palpites"], ["snow", "Pé-frio: 4 erros seguidos"]] },
+  ];
+  const days = [];
+  for (let d = todayKey(), i = 0; i < 5; i++) days.unshift((d = stepWeekday(d, -1)));
+  const list = activeParticipants().slice(0, sample.length).map((p, i) => {
+    const s = sample[i];
+    return { ...s, p, pos: i + 1, rate: s.hits / s.charged, last: s.last.map((st, k) => ({ day: days[k], st })) };
+  });
+  return { list };
+}
+
 function renderBolaoRank() {
   const ym = bolao.month;
   const monthly = bolao.scope === "month";
-  const rk = rankingFor(monthly ? (d) => monthOf(d) === ym : () => true);
-  const played = rk.list.filter((r) => r.charged || r.voids);
+  let rk = rankingFor(monthly ? (d) => monthOf(d) === ym : () => true);
+  let played = rk.list.filter((r) => r.charged || r.voids);
+  const symbolic = bolao.demo && !played.length && activeParticipants().length > 0;
+  if (symbolic) {
+    rk = symbolicRanking();
+    played = rk.list;
+  }
 
   let html = `
     <div class="br-head">
@@ -665,7 +690,9 @@ function renderBolaoRank() {
         <button type="button" role="tab" data-scope="month" aria-selected="${monthly}">${monthLabel(ym).split(" ")[0]}</button>
         <button type="button" role="tab" data-scope="all" aria-selected="${!monthly}">Geral</button>
       </div>
-    </div>`;
+    </div>
+    ${symbolic ? `<p class="br-symbolic">${icon("eye")}<span><b>Ranking simbólico:</b> pontos de exemplo só para ver o efeito.
+      Some sozinho quando houver pontos de verdade.</span></p>` : ""}`;
 
   if (!played.length) {
     $("#bolaoRank").innerHTML = html + `
