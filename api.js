@@ -102,7 +102,17 @@ const api = {
     }
     if (!data.token) throw new ApiError("O servidor de login não devolveu a sessão.", res.status);
     this.saveSession(data.token, data.user?.email || email);
-    await this.getJwt(); // confirma já no login que a sessão vale para a Data API
+    // Confirma já no login que a sessão vale para a Data API. Se a senha passou mas esta
+    // etapa falhar, avisa com outra mensagem (não é usuário/senha errados).
+    try {
+      await this.getJwt();
+    } catch (ex) {
+      this.clearSession();
+      if (ex instanceof AuthError) {
+        throw new ApiError("Senha aceita, mas o Neon não liberou o acesso aos dados (etapa do token).", 401, "token_failed");
+      }
+      throw ex;
+    }
   },
 
   async signOut() {
