@@ -107,6 +107,32 @@ create table if not exists public.bolao_config (
 alter table public.bolao_config add column if not exists pix_name text not null default '' check (char_length(pix_name) <= 25);
 alter table public.bolao_config add column if not exists pix_city text not null default '' check (char_length(pix_city) <= 15);
 
+-- ---------- Membros: quem pode ver e mexer nos dados ----------
+-- O Neon Auth ainda não permite fechar o cadastro: qualquer pessoa consegue criar uma conta.
+-- Por isso estar logado NÃO basta: só quem está nesta lista lê ou grava qualquer coisa.
+-- Adicionar alguém (SQL Editor do Neon):
+--   insert into public.allowed_users (user_id, note)
+--   select id, email from neon_auth."user" where email = 'sahymon@esquilook.app'
+--   on conflict do nothing;
+create table if not exists public.allowed_users (
+  user_id   text primary key,
+  note      text,
+  added_at  timestamptz not null default now()
+);
+alter table public.allowed_users enable row level security;  -- sem políticas: ninguém acessa pela Data API
+revoke all on public.allowed_users from public, anonymous, authenticated;
+
+create or replace function public.is_member()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$ select exists (select 1 from public.allowed_users where user_id = auth.user_id()) $$;
+
+revoke all on function public.is_member() from public, anonymous;
+grant execute on function public.is_member() to authenticated;
+
 -- ---------- Funções do bolão ----------
 
 -- Hoje em Brasília
@@ -180,7 +206,7 @@ as $$
   select exists (
     select 1 from public.bolao_guesses g
     join public.entries e on e.day = g.day and e.status = 'shirt' and e.shirt_id = g.shirt_id
-    where g.participant_id = p and g.day = d
+    where g.participant_id = p and g.day = d and public.is_member()
   )
 $$;
 
@@ -196,8 +222,8 @@ as $$
 declare
   d date := public.bolao_guess_day();
 begin
-  if auth.user_id() is null then
-    raise exception 'Faça login para palpitar.';
+  if not public.is_member() then
+    raise exception 'Esta conta não tem acesso ao Esquilook.';
   end if;
   if d is null then
     raise exception 'Os palpites de hoje já fecharam. Eles abrem de novo às 00:00 do próximo dia útil.';
@@ -241,6 +267,7 @@ as $$
          case when public.bolao_day_open(g.day) then null else g.shirt_id end,
          g.created_at
   from public.bolao_guesses g
+  where public.is_member()
   order by g.day, g.created_at
 $$;
 
@@ -285,70 +312,70 @@ grant select, update         on public.bolao_config       to authenticated;
 drop policy if exists shirts_select on public.shirts;
 drop policy if exists shirts_insert on public.shirts;
 drop policy if exists shirts_delete on public.shirts;
-create policy shirts_select on public.shirts for select to authenticated using (true);
-create policy shirts_insert on public.shirts for insert to authenticated with check (true);
+create policy shirts_select on public.shirts for select to authenticated using (public.is_member());
+create policy shirts_insert on public.shirts for insert to authenticated with check (public.is_member());
 -- Camisa usada num mês encerrado do bolão não sai (levaria os registros dela junto)
 create policy shirts_delete on public.shirts for delete to authenticated using (
-  not exists (select 1 from public.entries e where e.shirt_id = shirts.id and public.bolao_month_closed(e.day))
+  public.is_member() and not exists (select 1 from public.entries e where e.shirt_id = shirts.id and public.bolao_month_closed(e.day))
 );
 
 drop policy if exists entries_select on public.entries;
 drop policy if exists entries_insert on public.entries;
 drop policy if exists entries_delete on public.entries;
-create policy entries_select on public.entries for select to authenticated using (true);
+create policy entries_select on public.entries for select to authenticated using (public.is_member());
 -- Não aceita dias futuros (horário de Brasília) nem meses encerrados do bolão
 create policy entries_insert on public.entries for insert to authenticated
-  with check (day <= public.bolao_today() and not public.bolao_month_closed(day));
+  with check (public.is_member() and day <= public.bolao_today() and not public.bolao_month_closed(day));
 create policy entries_delete on public.entries for delete to authenticated
-  using (not public.bolao_month_closed(day));
+  using (public.is_member() and not public.bolao_month_closed(day));
 
 drop policy if exists settings_select on public.settings;
 drop policy if exists settings_insert on public.settings;
 drop policy if exists settings_update on public.settings;
-create policy settings_select on public.settings for select to authenticated using (true);
-create policy settings_insert on public.settings for insert to authenticated with check (true);
-create policy settings_update on public.settings for update to authenticated using (true) with check (true);
+create policy settings_select on public.settings for select to authenticated using (public.is_member());
+create policy settings_insert on public.settings for insert to authenticated with check (public.is_member());
+create policy settings_update on public.settings for update to authenticated using (public.is_member()) with check (public.is_member());
 
 drop policy if exists bolao_participants_select on public.bolao_participants;
 drop policy if exists bolao_participants_insert on public.bolao_participants;
 drop policy if exists bolao_participants_update on public.bolao_participants;
-create policy bolao_participants_select on public.bolao_participants for select to authenticated using (true);
-create policy bolao_participants_insert on public.bolao_participants for insert to authenticated with check (true);
-create policy bolao_participants_update on public.bolao_participants for update to authenticated using (true) with check (true);
+create policy bolao_participants_select on public.bolao_participants for select to authenticated using (public.is_member());
+create policy bolao_participants_insert on public.bolao_participants for insert to authenticated with check (public.is_member());
+create policy bolao_participants_update on public.bolao_participants for update to authenticated using (public.is_member()) with check (public.is_member());
 
 -- Dinheiro: só em meses abertos
 drop policy if exists bolao_payments_select on public.bolao_payments;
 drop policy if exists bolao_payments_insert on public.bolao_payments;
 drop policy if exists bolao_payments_delete on public.bolao_payments;
 drop policy if exists bolao_payments_update on public.bolao_payments;
-create policy bolao_payments_select on public.bolao_payments for select to authenticated using (true);
+create policy bolao_payments_select on public.bolao_payments for select to authenticated using (public.is_member());
 create policy bolao_payments_update on public.bolao_payments for update to authenticated
-  using (not public.bolao_month_closed(month)) with check (not public.bolao_month_closed(month));
+  using (public.is_member() and not public.bolao_month_closed(month)) with check (public.is_member() and not public.bolao_month_closed(month));
 create policy bolao_payments_insert on public.bolao_payments for insert to authenticated
-  with check (not public.bolao_month_closed(month));
+  with check (public.is_member() and not public.bolao_month_closed(month));
 create policy bolao_payments_delete on public.bolao_payments for delete to authenticated
-  using (not public.bolao_month_closed(month));
+  using (public.is_member() and not public.bolao_month_closed(month));
 
 drop policy if exists bolao_expenses_select on public.bolao_expenses;
 drop policy if exists bolao_expenses_insert on public.bolao_expenses;
 drop policy if exists bolao_expenses_delete on public.bolao_expenses;
-create policy bolao_expenses_select on public.bolao_expenses for select to authenticated using (true);
+create policy bolao_expenses_select on public.bolao_expenses for select to authenticated using (public.is_member());
 create policy bolao_expenses_insert on public.bolao_expenses for insert to authenticated
-  with check (not public.bolao_month_closed(month));
+  with check (public.is_member() and not public.bolao_month_closed(month));
 create policy bolao_expenses_delete on public.bolao_expenses for delete to authenticated
-  using (not public.bolao_month_closed(month));
+  using (public.is_member() and not public.bolao_month_closed(month));
 
 -- Encerrar: só depois que o mês terminou
 drop policy if exists bolao_closures_select on public.bolao_closures;
 drop policy if exists bolao_closures_insert on public.bolao_closures;
-create policy bolao_closures_select on public.bolao_closures for select to authenticated using (true);
+create policy bolao_closures_select on public.bolao_closures for select to authenticated using (public.is_member());
 create policy bolao_closures_insert on public.bolao_closures for insert to authenticated
-  with check (month < date_trunc('month', public.bolao_today()::timestamp)::date);
+  with check (public.is_member() and month < date_trunc('month', public.bolao_today()::timestamp)::date);
 
 drop policy if exists bolao_config_select on public.bolao_config;
 drop policy if exists bolao_config_update on public.bolao_config;
-create policy bolao_config_select on public.bolao_config for select to authenticated using (true);
-create policy bolao_config_update on public.bolao_config for update to authenticated using (true) with check (true);
+create policy bolao_config_select on public.bolao_config for select to authenticated using (public.is_member());
+create policy bolao_config_update on public.bolao_config for update to authenticated using (public.is_member()) with check (public.is_member());
 
 -- ---------- Dados iniciais ----------
 
@@ -374,3 +401,18 @@ insert into public.bolao_participants (name, color) values
   ('Lolo',       '#10b981'),
   ('Gabriel',    '#0ea5e9')
 on conflict (name) do nothing;
+
+-- ---------- Membro inicial ----------
+-- Libera a conta compartilhada assim que ela existir no Neon Auth.
+-- Se a conta ainda não foi criada, não faz nada: crie a conta e rode o script de novo.
+do $$
+begin
+  if to_regclass('neon_auth."user"') is not null then
+    insert into public.allowed_users (user_id, note)
+    select id::text, email from neon_auth."user" where lower(email) = 'sahymon@esquilook.app'
+    on conflict (user_id) do nothing;
+  else
+    raise notice 'Tabela de usuários do Neon Auth não encontrada; a conta não foi liberada.';
+  end if;
+end
+$$;
