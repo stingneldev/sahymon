@@ -1,11 +1,14 @@
 /* =========================================================
-   Esquilook — conexão com o Supabase
-   Fala direto com as APIs REST do Supabase (Auth + PostgREST) via fetch,
-   sem biblioteca externa. A sessão (tokens) fica no localStorage.
+   Esquilook — conexão com o Neon
+   Login: Neon Auth (Managed Better Auth). Dados: Neon Data API (PostgREST).
+   Tudo via fetch, sem biblioteca externa e sem cookies de outro domínio:
+     1. POST /sign-in/email      -> token de sessão (guardado no localStorage)
+     2. GET  /token  (Bearer)    -> JWT de curta duração
+     3. Data API     (Bearer JWT) -> leitura e gravação, com RLS no banco
    ========================================================= */
 
 const CFG = window.ESQUILOOK_CONFIG || {};
-const AUTH_STORE = "esquilook:auth";
+const AUTH_STORE = "esquilook:neon-auth";
 
 // Erros que a interface trata de forma diferente
 class AuthError extends Error {}
@@ -17,13 +20,24 @@ class ApiError extends Error {
   }
 }
 
-const api = {
-  session: null,
+// Lê o conteúdo (payload) de um JWT sem verificar a assinatura (quem verifica é o servidor)
+function jwtPayload(token) {
+  try {
+    const part = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    return JSON.parse(decodeURIComponent(escape(atob(part))));
+  } catch {
+    return {};
+  }
+}
 
-  // URL do projeto (ou localhost para testes) + chave preenchidas em config.js
+const api = {
+  session: null, // { token: sessão do Neon Auth, email }
+  jwt: null,     // { token, exp } usado na Data API
+
+  // URLs do Neon (ou localhost para testes) preenchidas em config.js
   configured() {
-    const url = String(CFG.supabaseUrl || "");
-    return /^(https:\/\/[a-z0-9-]+\.supabase\.co|http:\/\/localhost:\d+)$/.test(url) && String(CFG.supabaseKey || "").length > 20;
+    const ok = (u) => /^(https:\/\/[a-z0-9.-]+\.neon\.tech|http:\/\/localhost:\d+)\/[a-z0-9_/-]+$/.test(String(u || ""));
+    return ok(CFG.authUrl) && ok(CFG.dataUrl);
   },
 
   /* ---------- Sessão ---------- */
@@ -31,124 +45,123 @@ const api = {
   loadSession() {
     try {
       const s = JSON.parse(localStorage.getItem(AUTH_STORE));
-      if (s && typeof s.access_token === "string" && typeof s.refresh_token === "string") this.session = s;
+      if (s && typeof s.token === "string" && s.token) this.session = s;
     } catch { /* sessão corrompida: ignora */ }
     return this.session;
   },
 
-  saveSession(data) {
-    this.session = {
-      access_token: data.access_token,
-      refresh_token: data.refresh_token,
-      expires_at: Date.now() + (Number(data.expires_in) || 3600) * 1000,
-    };
-    try { localStorage.setItem(AUTH_STORE, JSON.stringify(this.session)); } catch { /* sem armazenamento: vale só nesta aba */ }
-  },
-
-  // Nome de login (parte antes do @) lido do token da sessão
-  username() {
-    try {
-      const part = this.session.access_token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
-      return String(JSON.parse(atob(part)).email || "").split("@")[0];
-    } catch {
-      return "";
-    }
+  saveSession(token, email) {
+    this.session = { token, email: String(email || "") };
+    this.jwt = null;
+    try { localStorage.setItem(AUTH_STORE, JSON.stringify(this.session)); } catch { /* vale só nesta aba */ }
   },
 
   clearSession() {
     this.session = null;
+    this.jwt = null;
     try { localStorage.removeItem(AUTH_STORE); } catch { /* nada a fazer */ }
   },
 
-  async authCall(grant, body) {
-    let res;
+  // Nome de login (parte antes do @)
+  username() {
+    return (this.session?.email || "").split("@")[0];
+  },
+
+  async authFetch(path, { method = "GET", body, bearer } = {}) {
+    const headers = {};
+    if (body !== undefined) headers["Content-Type"] = "application/json";
+    if (bearer) headers.Authorization = `Bearer ${bearer}`;
     try {
-      res = await fetch(`${CFG.supabaseUrl}/auth/v1/token?grant_type=${grant}`, {
-        method: "POST",
-        headers: { apikey: CFG.supabaseKey, "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+      return await fetch(`${CFG.authUrl}${path}`, {
+        method,
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+        credentials: "omit", // nada de cookie de outro domínio (o Safari bloquearia)
       });
     } catch {
       throw new ApiError("Sem conexão com o servidor.", 0);
     }
+  },
+
+  async signIn(email, password) {
+    const res = await this.authFetch("/sign-in/email", { method: "POST", body: { email, password, rememberMe: true } });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       if (res.status === 429) throw new ApiError("Muitas tentativas. Aguarde alguns minutos.", 429);
-      // Conta criada sem "Auto Confirm User": a senha pode estar certa, mas o login é recusado
-      if (data.error_code === "email_not_confirmed" || /not confirmed/i.test(data.msg || data.error_description || "")) {
-        throw new ApiError("Conta ainda não confirmada no Supabase (marque \"Auto Confirm User\").", res.status, "email_not_confirmed");
+      if (data.code === "EMAIL_NOT_VERIFIED") {
+        throw new ApiError("Conta ainda não verificada no Neon Auth.", res.status, "email_not_confirmed");
       }
-      throw new AuthError(data.error_description || data.msg || "Usuário ou senha inválidos.");
+      if (res.status === 403 && /origin/i.test(data.message || "")) {
+        throw new ApiError("Este endereço do site não está liberado no Neon Auth.", 403, "invalid_origin");
+      }
+      throw new AuthError(data.message || "Usuário ou senha inválidos.");
     }
-    this.saveSession(data);
-  },
-
-  signIn(email, password) {
-    return this.authCall("password", { email, password });
-  },
-
-  // Uma renovação por vez: chamadas em paralelo esperam a mesma (o Supabase
-  // invalida o refresh_token depois de usado, então renovar duas vezes derrubaria a sessão)
-  refreshing: null,
-
-  refresh() {
-    if (!this.session) return Promise.reject(new AuthError("Sessão encerrada."));
-    this.refreshing ??= this.authCall("refresh_token", { refresh_token: this.session.refresh_token })
-      .catch((e) => {
-        if (e instanceof AuthError) this.clearSession();
-        throw e;
-      })
-      .finally(() => { this.refreshing = null; });
-    return this.refreshing;
+    if (!data.token) throw new ApiError("O servidor de login não devolveu a sessão.", res.status);
+    this.saveSession(data.token, data.user?.email || email);
+    await this.getJwt(); // confirma já no login que a sessão vale para a Data API
   },
 
   async signOut() {
-    const token = this.session?.access_token;
+    const token = this.session?.token;
     this.clearSession();
     if (!token) return;
     try {
-      await fetch(`${CFG.supabaseUrl}/auth/v1/logout`, {
-        method: "POST",
-        headers: { apikey: CFG.supabaseKey, Authorization: `Bearer ${token}` },
-      });
+      await this.authFetch("/sign-out", { method: "POST", body: {}, bearer: token });
     } catch { /* sem rede: a sessão local já foi apagada */ }
   },
 
-  /* ---------- Requisições autenticadas ---------- */
+  // JWT para a Data API. Reaproveita enquanto faltar mais de 1 min para vencer;
+  // chamadas em paralelo esperam o mesmo pedido.
+  jwtRequest: null,
+
+  getJwt(force = false) {
+    if (!this.session) return Promise.reject(new AuthError("Sessão encerrada."));
+    if (!force && this.jwt && this.jwt.exp - Date.now() > 60_000) return Promise.resolve(this.jwt.token);
+    this.jwtRequest ??= (async () => {
+      const res = await this.authFetch("/token", { bearer: this.session.token });
+      if (res.status === 401 || res.status === 403) {
+        this.clearSession();
+        throw new AuthError("Sessão expirada.");
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.token) throw new ApiError("Não foi possível validar a sessão.", res.status);
+      const exp = Number(jwtPayload(data.token).exp) * 1000 || Date.now() + 5 * 60_000;
+      this.jwt = { token: data.token, exp };
+      return data.token;
+    })().finally(() => { this.jwtRequest = null; });
+    return this.jwtRequest;
+  },
+
+  /* ---------- Requisições na Data API ---------- */
 
   async request(path, { method = "GET", body, prefer } = {}, retried = false) {
-    if (!this.session) throw new AuthError("Sessão encerrada.");
-    if (this.session.expires_at - Date.now() < 60_000) await this.refresh();
-
-    const headers = {
-      apikey: CFG.supabaseKey,
-      Authorization: `Bearer ${this.session.access_token}`,
-    };
+    const jwt = await this.getJwt(retried);
+    const headers = { Authorization: `Bearer ${jwt}` };
     if (body !== undefined) headers["Content-Type"] = "application/json";
     if (prefer) headers.Prefer = prefer;
 
     let res;
     try {
-      res = await fetch(`${CFG.supabaseUrl}${path}`, {
+      res = await fetch(`${CFG.dataUrl}${path}`, {
         method,
         headers,
         body: body === undefined ? undefined : JSON.stringify(body),
+        credentials: "omit",
       });
     } catch {
       throw new ApiError("Sem conexão com o servidor.", 0);
     }
 
-    if (res.status === 401 && !retried) {
-      await this.refresh();
-      return this.request(path, { method, body, prefer }, true);
-    }
+    // JWT vencido ou recusado: pega outro uma vez; se a sessão acabou, getJwt avisa
+    if (res.status === 401 && !retried) return this.request(path, { method, body, prefer }, true);
     if (res.status === 401) {
       this.clearSession();
       throw new AuthError("Sessão expirada.");
     }
 
     const text = await res.text();
-    const data = text ? JSON.parse(text) : null;
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch { data = null; }
     if (!res.ok) throw new ApiError(data?.message || `Erro ${res.status}`, res.status, data?.code);
     return data;
   },
@@ -157,9 +170,9 @@ const api = {
 
   async fetchAll() {
     const [shirts, entries, settings] = await Promise.all([
-      this.request("/rest/v1/shirts?select=id,name,color,img,position,created_at&order=position.asc,created_at.asc"),
-      this.request("/rest/v1/entries?select=day,status,shirt_id&order=day.asc"),
-      this.request("/rest/v1/settings?select=key,value"),
+      this.request("/shirts?select=id,name,color,img,position,created_at&order=position.asc,created_at.asc"),
+      this.request("/entries?select=day,status,shirt_id&order=day.asc"),
+      this.request("/settings?select=key,value"),
     ]);
     return { shirts, entries, settings };
   },
@@ -167,34 +180,34 @@ const api = {
   // Versão leve para a sincronização periódica: sem as fotos das camisas
   async fetchLight() {
     const [shirtIds, entries, settings] = await Promise.all([
-      this.request("/rest/v1/shirts?select=id&order=id.asc"),
-      this.request("/rest/v1/entries?select=day,status,shirt_id&order=day.asc"),
-      this.request("/rest/v1/settings?select=key,value"),
+      this.request("/shirts?select=id&order=id.asc"),
+      this.request("/entries?select=day,status,shirt_id&order=day.asc"),
+      this.request("/settings?select=key,value"),
     ]);
     return { shirtIds: shirtIds.map((x) => x.id), entries, settings };
   },
 
   addEntry(day, shirtId) {
     const row = shirtId ? { day, status: "shirt", shirt_id: shirtId } : { day, status: "absent", shirt_id: null };
-    return this.request("/rest/v1/entries", { method: "POST", body: row, prefer: "return=minimal" });
+    return this.request("/entries", { method: "POST", body: row, prefer: "return=minimal" });
   },
 
   // return=representation: num mês encerrado do bolão o banco não apaga e volta vazio
   deleteEntry(day) {
-    return this.request(`/rest/v1/entries?day=eq.${encodeURIComponent(day)}`, { method: "DELETE", prefer: "return=representation" });
+    return this.request(`/entries?day=eq.${encodeURIComponent(day)}`, { method: "DELETE", prefer: "return=representation" });
   },
 
   addShirt(shirt) {
-    return this.request("/rest/v1/shirts", { method: "POST", body: shirt, prefer: "return=minimal" });
+    return this.request("/shirts", { method: "POST", body: shirt, prefer: "return=minimal" });
   },
 
   // return=representation: se o banco recusar (camisa de mês encerrado), volta vazio
   deleteShirt(id) {
-    return this.request(`/rest/v1/shirts?id=eq.${encodeURIComponent(id)}&select=id`, { method: "DELETE", prefer: "return=representation" });
+    return this.request(`/shirts?id=eq.${encodeURIComponent(id)}&select=id`, { method: "DELETE", prefer: "return=representation" });
   },
 
   setSetting(key, value) {
-    return this.request("/rest/v1/settings?on_conflict=key", {
+    return this.request("/settings?on_conflict=key", {
       method: "POST",
       body: { key, value },
       prefer: "resolution=merge-duplicates,return=minimal",
@@ -205,65 +218,65 @@ const api = {
 
   async fetchBolao() {
     const [participants, guesses, payments, expenses, closures, config] = await Promise.all([
-      this.request("/rest/v1/bolao_participants?select=id,name,color,active,created_at&order=created_at.asc"),
-      this.request("/rest/v1/rpc/bolao_guess_list"),
-      this.request("/rest/v1/bolao_payments?select=id,participant_id,month,amount_cents,confirmed,created_at&order=created_at.asc"),
-      this.request("/rest/v1/bolao_expenses?select=id,month,description,amount_cents,created_at&order=created_at.asc"),
-      this.request("/rest/v1/bolao_closures?select=month,prize_cents,winners,closed_at"),
-      this.request("/rest/v1/bolao_config?select=pix_key,pix_name,pix_city"),
+      this.request("/bolao_participants?select=id,name,color,active,created_at&order=created_at.asc"),
+      this.request("/rpc/bolao_guess_list"),
+      this.request("/bolao_payments?select=id,participant_id,month,amount_cents,confirmed,created_at&order=created_at.asc"),
+      this.request("/bolao_expenses?select=id,month,description,amount_cents,created_at&order=created_at.asc"),
+      this.request("/bolao_closures?select=month,prize_cents,winners,closed_at"),
+      this.request("/bolao_config?select=pix_key,pix_name,pix_city"),
     ]);
     return { participants, guesses, payments, expenses, closures, config: config?.[0] };
   },
 
   // Palpite definitivo: o banco confere horário, castigo e duplicidade e recusa com uma mensagem
   placeGuess(day, participantId, shirtId) {
-    return this.request("/rest/v1/rpc/bolao_place_guess", {
+    return this.request("/rpc/bolao_place_guess", {
       method: "POST",
       body: { p_day: day, p_participant: participantId, p_shirt: shirtId },
     });
   },
 
   addParticipant(row) {
-    return this.request("/rest/v1/bolao_participants", { method: "POST", body: row, prefer: "return=minimal" });
+    return this.request("/bolao_participants", { method: "POST", body: row, prefer: "return=minimal" });
   },
 
   updateParticipant(id, patch) {
-    return this.request(`/rest/v1/bolao_participants?id=eq.${encodeURIComponent(id)}`, {
+    return this.request(`/bolao_participants?id=eq.${encodeURIComponent(id)}`, {
       method: "PATCH", body: patch, prefer: "return=representation",
     });
   },
 
   addPayment(row) {
-    return this.request("/rest/v1/bolao_payments", { method: "POST", body: row, prefer: "return=minimal" });
+    return this.request("/bolao_payments", { method: "POST", body: row, prefer: "return=minimal" });
   },
 
   // return=representation: se o banco recusar (mês encerrado), volta vazio em vez de erro
   deletePayment(id) {
-    return this.request(`/rest/v1/bolao_payments?id=eq.${encodeURIComponent(id)}`, { method: "DELETE", prefer: "return=representation" });
+    return this.request(`/bolao_payments?id=eq.${encodeURIComponent(id)}`, { method: "DELETE", prefer: "return=representation" });
   },
 
   // O caixa confirma um pagamento informado pelo QR Code
   confirmPayment(id) {
-    return this.request(`/rest/v1/bolao_payments?id=eq.${encodeURIComponent(id)}`, {
+    return this.request(`/bolao_payments?id=eq.${encodeURIComponent(id)}`, {
       method: "PATCH", body: { confirmed: true }, prefer: "return=representation",
     });
   },
 
   addExpense(row) {
-    return this.request("/rest/v1/bolao_expenses", { method: "POST", body: row, prefer: "return=minimal" });
+    return this.request("/bolao_expenses", { method: "POST", body: row, prefer: "return=minimal" });
   },
 
   deleteExpense(id) {
-    return this.request(`/rest/v1/bolao_expenses?id=eq.${encodeURIComponent(id)}`, { method: "DELETE", prefer: "return=representation" });
+    return this.request(`/bolao_expenses?id=eq.${encodeURIComponent(id)}`, { method: "DELETE", prefer: "return=representation" });
   },
 
   closeMonth(row) {
-    return this.request("/rest/v1/bolao_closures", { method: "POST", body: row, prefer: "return=minimal" });
+    return this.request("/bolao_closures", { method: "POST", body: row, prefer: "return=minimal" });
   },
 
   // { pix_key, pix_name, pix_city }
   setPixConfig(patch) {
-    return this.request("/rest/v1/bolao_config?id=eq.true", {
+    return this.request("/bolao_config?id=eq.true", {
       method: "PATCH", body: patch, prefer: "return=representation",
     });
   },
@@ -271,14 +284,14 @@ const api = {
   // Importação: o que já existir na nuvem é mantido
   importShirts(rows) {
     if (!rows.length) return null;
-    return this.request("/rest/v1/shirts?on_conflict=id", {
+    return this.request("/shirts?on_conflict=id", {
       method: "POST", body: rows, prefer: "resolution=ignore-duplicates,return=minimal",
     });
   },
 
   importEntries(rows) {
     if (!rows.length) return null;
-    return this.request("/rest/v1/entries?on_conflict=day", {
+    return this.request("/entries?on_conflict=day", {
       method: "POST", body: rows, prefer: "resolution=ignore-duplicates,return=minimal",
     });
   },

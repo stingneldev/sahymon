@@ -14,7 +14,7 @@
      confirma depois de conferir o extrato.
    O bolão começa em BOLAO_START: dias anteriores não contam.
    Sem as tabelas no banco, funciona só na memória (nada é salvo).
-   Quem garante as regras é o banco (supabase/schema.sql); aqui é só a tela.
+   Quem garante as regras é o banco (neon/schema.sql); aqui é só a tela.
    Carregado antes do app.js: usa as funções dele só depois que o app abre.
    ========================================================= */
 
@@ -62,7 +62,7 @@ async function loadBolao() {
     d = await api.fetchBolao();
   } catch (ex) {
     if (ex instanceof AuthError) throw ex;
-    if (ex.status === 404) { // tabelas ainda não criadas no Supabase
+    if (ex.status === 404) { // tabelas ainda não criadas no Neon
       bolao.demo = true;
       bolao.available = true;
       bolao.probedAt = Date.now();

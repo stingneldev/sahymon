@@ -1,6 +1,7 @@
 -- =========================================================
--- Esquilook — estrutura do banco no Supabase
--- Como usar: Supabase → SQL Editor → New query → cole tudo → Run.
+-- Esquilook — estrutura do banco no Neon
+-- Como usar: Neon → SQL Editor → cole tudo → Run.
+-- Pré-requisitos: Neon Auth e Data API ativados no projeto.
 -- Pode rodar de novo sem problema: nada é duplicado nem apagado.
 -- =========================================================
 
@@ -28,7 +29,7 @@ create table if not exists public.entries (
   status      text not null check (status in ('shirt', 'absent')),
   shirt_id    text references public.shirts (id) on delete cascade,
   created_at  timestamptz not null default now(),
-  created_by  uuid default auth.uid(),
+  created_by  text default auth.user_id(),  -- id do usuário do Neon Auth
   constraint entries_shirt_matches_status check ((status = 'shirt') = (shirt_id is not null)),
   constraint entries_in_range check (day between date '2026-10-01' and date '2027-12-31'),
   constraint entries_weekday check (extract(isodow from day) < 6)  -- sábado e domingo: luto
@@ -39,16 +40,6 @@ create table if not exists public.settings (
   key    text primary key check (key in ('friend')),
   value  text not null check (char_length(value) between 1 and 24)
 );
-
--- ---------- Limpeza da 1ª versão do bolão ----------
--- A primeira versão usava um login por pessoa e nunca chegou a ser usada.
--- Estes nomes não existem na versão atual, então apagar é seguro mesmo rodando de novo.
-drop trigger if exists bolao_on_auth_user on auth.users;
-drop table if exists public.guesses, public.payments, public.expenses, public.profiles cascade;
-drop function if exists public.bolao_new_profile() cascade;
-drop function if exists public.bolao_role() cascade;
-drop function if exists public.bolao_guess_open(date) cascade;
-drop function if exists public.bolao_open_counts() cascade;
 
 -- ---------- Tabelas do bolão do lanche ----------
 -- Todos usam o mesmo login; cada palpite escolhe o nome do participante.
@@ -103,7 +94,7 @@ create table if not exists public.bolao_closures (
   prize_cents  integer not null check (prize_cents >= 0),
   winners      text not null default '' check (char_length(winners) <= 300),
   closed_at    timestamptz not null default now(),
-  closed_by    uuid default auth.uid()
+  closed_by    text default auth.user_id()
 );
 
 -- Pix do caixa (uma linha só): chave, nome de quem recebe e cidade, usados no QR Code
@@ -205,7 +196,7 @@ as $$
 declare
   d date := public.bolao_guess_day();
 begin
-  if auth.uid() is null then
+  if auth.user_id() is null then
     raise exception 'Faça login para palpitar.';
   end if;
   if d is null then
@@ -256,13 +247,15 @@ $$;
 revoke all on function public.bolao_today(), public.bolao_cutoff(date), public.bolao_prev_weekday(date),
   public.bolao_next_weekday(date), public.bolao_month_closed(date), public.bolao_day_open(date),
   public.bolao_guess_day(), public.bolao_hit(uuid, date), public.bolao_place_guess(date, uuid, text),
-  public.bolao_guess_list() from public, anon;
+  public.bolao_guess_list() from public, anonymous;
 grant execute on function public.bolao_today(), public.bolao_cutoff(date), public.bolao_prev_weekday(date),
   public.bolao_next_weekday(date), public.bolao_month_closed(date), public.bolao_day_open(date),
   public.bolao_guess_day(), public.bolao_hit(uuid, date), public.bolao_place_guess(date, uuid, text),
   public.bolao_guess_list() to authenticated;
 
 -- ---------- Segurança: só quem fez login lê ou escreve ----------
+
+grant usage on schema public to authenticated;
 
 alter table public.shirts             enable row level security;
 alter table public.entries            enable row level security;
@@ -275,7 +268,7 @@ alter table public.bolao_closures     enable row level security;
 alter table public.bolao_config       enable row level security;
 
 revoke all on public.shirts, public.entries, public.settings, public.bolao_participants, public.bolao_guesses,
-  public.bolao_payments, public.bolao_expenses, public.bolao_closures, public.bolao_config from anon;
+  public.bolao_payments, public.bolao_expenses, public.bolao_closures, public.bolao_config from anonymous;
 revoke all on public.shirts, public.entries, public.settings, public.bolao_participants, public.bolao_guesses,
   public.bolao_payments, public.bolao_expenses, public.bolao_closures, public.bolao_config from authenticated;
 grant select, insert, delete on public.shirts             to authenticated;
@@ -356,18 +349,6 @@ drop policy if exists bolao_config_select on public.bolao_config;
 drop policy if exists bolao_config_update on public.bolao_config;
 create policy bolao_config_select on public.bolao_config for select to authenticated using (true);
 create policy bolao_config_update on public.bolao_config for update to authenticated using (true) with check (true);
-
--- ---------- Despertador ----------
--- Projetos gratuitos são pausados após 7 dias sem acesso. O GitHub chama esta
--- função a cada 3 dias (.github/workflows/keepalive.yml). Ela não lê nenhum dado.
-create or replace function public.keepalive()
-returns integer
-language sql
-stable
-as $$ select 1 $$;
-
-revoke all on function public.keepalive() from public;
-grant execute on function public.keepalive() to anon, authenticated;
 
 -- ---------- Dados iniciais ----------
 

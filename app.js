@@ -1,11 +1,11 @@
 /* =========================================================
    Esquilook — registro da camisa do dia
-   Os dados ficam no Supabase (api.js); só quem faz login vê ou registra.
+   Os dados ficam no Neon (api.js); só quem faz login vê ou registra.
    ========================================================= */
 
 // Dados da versão antiga (salvos só no navegador), oferecidos para importação
 const LEGACY_DATA = "camisometro:data:sahymon";
-const LEGACY_KEYS = ["camisometro:session", "camisometro:login-lock"];
+const LEGACY_KEYS = ["camisometro:session", "camisometro:login-lock", "esquilook:auth"]; // inclui a sessão do Supabase
 const KEY_IMPORT_DISMISSED = "esquilook:import-dismissed";
 
 const SYNC_SECONDS = 60; // busca novidades de outras pessoas
@@ -121,7 +121,7 @@ function shirtMedia(shirt) {
 
 /* ---------------- Auth ---------------- */
 
-// Login só com o nome: "sahymon" vira "sahymon@<loginDomain>" (endereço de fachada da conta no Supabase)
+// Login só com o nome: "sahymon" vira "sahymon@<loginDomain>" (endereço de fachada da conta no Neon Auth)
 function loginEmailFor(user) {
   // Aceita também o endereço completo digitado por engano ("sahymon@esquilook.app")
   const suffix = `@${CFG.loginDomain}`;
