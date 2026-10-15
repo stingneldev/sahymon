@@ -37,7 +37,9 @@ const api = {
   // URLs do Neon (ou localhost para testes) preenchidas em config.js
   configured() {
     const ok = (u) => /^(https:\/\/[a-z0-9.-]+\.neon\.tech|http:\/\/localhost:\d+)\/[a-z0-9_/-]+$/.test(String(u || ""));
-    return ok(CFG.authUrl) && ok(CFG.dataUrl);
+    // O login pode passar pelo próprio site (/neon-auth, repassado pela Vercel)
+    const authOk = ok(CFG.authUrl) || /^\/[a-z0-9_-]+$/.test(String(CFG.authUrl || ""));
+    return authOk && ok(CFG.dataUrl);
   },
 
   /* ---------- Sessão ---------- */
@@ -76,7 +78,9 @@ const api = {
         method,
         headers,
         body: body === undefined ? undefined : JSON.stringify(body),
-        credentials: "omit", // nada de cookie de outro domínio (o Safari bloquearia)
+        // O Neon Auth autentica pelo cookie de sessão que ele mesmo grava no login.
+        // Pelo /neon-auth da Vercel o cookie é do próprio site; o token também vai no cabeçalho.
+        credentials: "include",
       });
     } catch {
       throw new ApiError("Sem conexão com o servidor.", 0);

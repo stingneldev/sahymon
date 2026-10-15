@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    {
+      "source": "/neon-auth/:path*",
+      "destination": "https://ep-crimson-firefly-b6ts3lsa.neonauth.c-2.sa-east-1.aws.neon.tech/neondb/auth/:path*"
+    }
+  ]
+}
