@@ -91,6 +91,10 @@ const api = {
       if (data.code === "EMAIL_NOT_VERIFIED") {
         throw new ApiError("Conta ainda não verificada no Neon Auth.", res.status, "email_not_confirmed");
       }
+      // Aberto como arquivo (duplo clique no index.html): o navegador não informa o site
+      if (data.code === "MISSING_OR_NULL_ORIGIN" || location.protocol === "file:") {
+        throw new ApiError("Abra o site pelo endereço (link do GitHub Pages ou localhost), não pelo arquivo.", res.status, "null_origin");
+      }
       if (res.status === 403 && /origin/i.test(data.message || "")) {
         throw new ApiError("Este endereço do site não está liberado no Neon Auth.", 403, "invalid_origin");
       }
